@@ -370,6 +370,9 @@ void AP_Mount_Viewpro::process_packet()
 
         // get optical zoom times
         _zoom_times = UINT16_VALUE(_msg_buff[_msg_buff_data_start+39], _msg_buff[_msg_buff_data_start+40]) * 0.1;
+
+        // get laser rangefinder distance
+        _rangefinder_dist_m = UINT16_VALUE(_msg_buff[_msg_buff_data_start+33], _msg_buff[_msg_buff_data_start+34]) * 0.1;
         break;
     }
 
@@ -889,7 +892,8 @@ void AP_Mount_Viewpro::send_camera_information(mavlink_channel_t chan) const
         0,                      // lens_id uint8_t
         flags,                  // flags uint32_t (CAMERA_CAP_FLAGS)
         0,                      // cam_definition_version uint16_t
-        cam_definition_uri);    // cam_definition_uri char[140]
+        cam_definition_uri,     // cam_definition_uri char[140]
+        _instance + 1);         // gimbal_device_id uint8_t
 }
 
 // send camera settings message to GCS
@@ -912,6 +916,19 @@ void AP_Mount_Viewpro::send_camera_settings(mavlink_channel_t chan) const
         _recording ? CAMERA_MODE_VIDEO : CAMERA_MODE_IMAGE, // camera mode (0:image, 1:video, 2:image survey)
         zoom_level,         // zoomLevel float, percentage from 0 to 100, NaN if unknown
         NaN);               // focusLevel float, percentage from 0 to 100, NaN if unknown
+}
+
+// get rangefinder distance.  Returns true on success
+bool AP_Mount_Viewpro::get_rangefinder_distance(float& distance_m) const
+{
+    // if not healthy or zero distance return false
+    // healthy() checks attitude timeout which is in same message as rangefinder distance
+    if (!healthy()) {
+        return false;
+    }
+
+    distance_m = _rangefinder_dist_m;
+    return true;
 }
 
 #endif // HAL_MOUNT_VIEWPRO_ENABLED

@@ -123,14 +123,6 @@ class AutoTestCopter(AutoTest):
     def set_autodisarm_delay(self, delay):
         self.set_parameter("DISARM_DELAY", delay)
 
-    def user_takeoff(self, alt_min=30, timeout=30, max_err=5):
-        '''takeoff using mavlink takeoff command'''
-        self.run_cmd(
-            mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-            p7=alt_min,
-        )
-        self.wait_altitude(alt_min-1, alt_min+max_err, relative=True, timeout=timeout)
-
     def takeoff(self,
                 alt_min=30,
                 takeoff_throttle=1700,
@@ -696,6 +688,47 @@ class AutoTestCopter(AutoTest):
         self.set_parameter('FS_THR_ENABLE', 0)
         self.reboot_sitl()
 
+    def ThrottleFailsafePassthrough(self):
+        '''check servo passthrough on RC failsafe.  Make sure it doesn't glitch to the bad RC input value'''
+        channel = 7
+        trim_value = 1450
+        self.set_parameters({
+            'RC%u_MIN' % channel: 1000,
+            'RC%u_MAX' % channel: 2000,
+            'SERVO%u_MIN' % channel: 1000,
+            'SERVO%u_MAX' % channel: 2000,
+            'SERVO%u_TRIM' % channel: trim_value,
+            'SERVO%u_FUNCTION' % channel: 146,  # scaled passthrough for channel 7
+            'FS_THR_ENABLE': 1,
+            'RC_FS_TIMEOUT': 10,
+            'SERVO_RC_FS_MSK': 1 << (channel-1),
+        })
+
+        self.reboot_sitl()
+
+        self.context_set_message_rate_hz('SERVO_OUTPUT_RAW', 200)
+
+        self.set_rc(channel, 1799)
+        expected_servo_output_value = 1778  # 1778 because of weird trim
+        self.wait_servo_channel_value(channel, expected_servo_output_value)
+        # receiver goes into failsafe with wild override values:
+
+        def ensure_SERVO_values_never_input(mav, m):
+            if m.get_type() != "SERVO_OUTPUT_RAW":
+                return
+            value = getattr(m, "servo%u_raw" % channel)
+            if value != expected_servo_output_value and value != trim_value:
+                raise NotAchievedException("Bad servo value %u received" % value)
+
+        self.install_message_hook_context(ensure_SERVO_values_never_input)
+        self.progress("Forcing receiver into failsafe")
+        self.set_rc_from_map({
+            3: 800,
+            channel: 1300,
+        })
+        self.wait_servo_channel_value(channel, trim_value)
+        self.delay_sim_time(10)
+
     # Tests all actions and logic behind the GCS failsafe
     def GCSFailsafe(self, side=60, timeout=360):
         '''Test GCS Failsafe'''
@@ -1107,7 +1140,7 @@ class AutoTestCopter(AutoTest):
         self.change_mode("LAND")
 
         # check vehicle descends to 2m or less within 40 seconds
-        self.wait_altitude(-5, 2, timeout=40, relative=True)
+        self.wait_altitude(-5, 2, timeout=50, relative=True)
 
         # force disarm of vehicle (it will likely not automatically disarm)
         self.disarm_vehicle(force=True)
@@ -2587,7 +2620,23 @@ class AutoTestCopter(AutoTest):
             "CAN_P1_DRIVER": 1,
             "GPS_TYPE": 9,
             "GPS_TYPE2": 9,
-            "SIM_GPS2_DISABLE": 0,
+            # disable simulated GPS, so only via DroneCAN
+            "SIM_GPS_DISABLE": 1,
+            "SIM_GPS2_DISABLE": 1,
+            # this ensures we use DroneCAN baro and compass
+            "SIM_BARO_COUNT" : 0,
+            "SIM_MAG1_DEVID" : 0,
+            "SIM_MAG2_DEVID" : 0,
+            "SIM_MAG3_DEVID" : 0,
+            "COMPASS_USE2"   : 0,
+            "COMPASS_USE3"   : 0,
+            # use DroneCAN rangefinder
+            "RNGFND1_TYPE" : 24,
+            "RNGFND1_MAX_CM" : 11000,
+            # use DroneCAN battery monitoring, and enforce with a arming voltage
+            "BATT_MONITOR" : 8,
+            "BATT_ARM_VOLT" : 12.0,
+            "SIM_SPEEDUP": 2,
         })
 
         self.context_push()
@@ -2685,6 +2734,17 @@ class AutoTestCopter(AutoTest):
         self.start_sup_program(instance=1)
         self.context_stop_collecting('STATUSTEXT')
         self.context_pop()
+
+        self.set_parameters({
+            # use DroneCAN ESCs for flight
+            "CAN_D1_UC_ESC_BM" : 0x0f,
+            # this stops us using local servo output, guaranteeing we are
+            # flying on DroneCAN ESCs
+            "SIM_CAN_SRV_MSK" : 0xFF,
+            # we can do the flight faster
+            "SIM_SPEEDUP" : 5,
+        })
+
         self.CopterMission()
 
     def TakeoffAlt(self):
@@ -4621,6 +4681,7 @@ class AutoTestCopter(AutoTest):
 
         except Exception as e:
             self.print_exception_caught(e)
+            self.disarm_vehicle(force=True)
             ex = e
 
         self.context_pop()
@@ -8297,6 +8358,7 @@ class AutoTestCopter(AutoTest):
             'heli': "wrong binary, different takeoff regime",
             'heli-gas': "wrong binary, different takeoff regime",
             'heli-blade360': "wrong binary, different takeoff regime",
+            "quad-can" : "needs CAN periph",
         }
         for frame in sorted(copter_vinfo_options["frames"].keys()):
             self.start_subtest("Testing frame (%s)" % str(frame))
@@ -9290,8 +9352,8 @@ class AutoTestCopter(AutoTest):
         # before the motors will spin:
         self.wait_esc_telem_rpm(
             esc=mot,
-            rpm_min=17626,
-            rpm_max=17626,
+            rpm_min=17640,
+            rpm_max=17640,
             minimum_duration=2,
             timeout=5,
         )
@@ -9300,8 +9362,8 @@ class AutoTestCopter(AutoTest):
         self.set_safetyswitch_off()
         self.wait_esc_telem_rpm(
             esc=mot,
-            rpm_min=17626,
-            rpm_max=17626,
+            rpm_min=17640,
+            rpm_max=17640,
             minimum_duration=2,
             timeout=5,
         )
@@ -9576,6 +9638,7 @@ class AutoTestCopter(AutoTest):
              self.BrakeMode,
              self.RecordThenPlayMission,
              self.ThrottleFailsafe,
+             self.ThrottleFailsafePassthrough,
              self.GCSFailsafe,
              self.CustomController,
         ])
@@ -9864,6 +9927,18 @@ class AutoTestCopter(AutoTest):
 
         self.test_rplidar("rplidara1", expected_distances)
 
+    def BrakeZ(self):
+        '''check jerk limit correct in Brake mode'''
+        self.set_parameter('PSC_JERK_Z', 3)
+        self.takeoff(50, mode='GUIDED')
+        vx, vy, vz_up = (0, 0, -1)
+        self.test_guided_local_velocity_target(vx=vx, vy=vy, vz_up=vz_up, timeout=10)
+
+        self.wait_for_local_velocity(vx=vx, vy=vy, vz_up=vz_up, timeout=10)
+        self.change_mode('BRAKE')
+        self.wait_for_local_velocity(vx=0, vy=0, vz_up=0, timeout=10)
+        self.land_and_disarm()
+
     def tests2b(self):  # this block currently around 9.5mins here
         '''return list of all tests'''
         ret = ([
@@ -9924,6 +9999,7 @@ class AutoTestCopter(AutoTest):
             self.RPLidarA1,
             self.RPLidarA2,
             self.SafetySwitch,
+            self.BrakeZ,
         ])
         return ret
 

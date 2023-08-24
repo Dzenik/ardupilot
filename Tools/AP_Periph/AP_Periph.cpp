@@ -100,6 +100,10 @@ void AP_Periph_FW::init()
 
     can_start();
 
+#ifdef HAL_PERIPH_ENABLE_NETWORKING
+    networking.init();
+#endif
+
 #if HAL_GCS_ENABLED
     stm32_watchdog_pat();
     gcs().init();
@@ -157,6 +161,10 @@ void AP_Periph_FW::init()
 
 #ifdef HAL_PERIPH_ENABLE_BATTERY
     battery.lib.init();
+#endif
+
+#ifdef HAL_PERIPH_ENABLE_RCIN
+    rcin_init();
 #endif
 
 #if defined(HAL_PERIPH_NEOPIXEL_COUNT_WITHOUT_NOTIFY) || defined(HAL_PERIPH_ENABLE_RC_OUT)
@@ -265,6 +273,10 @@ void AP_Periph_FW::init()
     nmea.init();
 #endif
 
+#ifdef HAL_PERIPH_ENABLE_RPM
+    rpm_sensor.init();
+#endif
+
 #ifdef HAL_PERIPH_ENABLE_NOTIFY
     notify.init();
 #endif
@@ -272,7 +284,7 @@ void AP_Periph_FW::init()
 #if AP_SCRIPTING_ENABLED
     scripting.init();
 #endif
-    start_ms = AP_HAL::native_millis();
+    start_ms = AP_HAL::millis();
 }
 
 #if (defined(HAL_PERIPH_NEOPIXEL_COUNT_WITHOUT_NOTIFY) && HAL_PERIPH_NEOPIXEL_COUNT_WITHOUT_NOTIFY == 8) || defined(HAL_PERIPH_ENABLE_NOTIFY)
@@ -290,7 +302,7 @@ void AP_Periph_FW::update_rainbow()
     if (rainbow_done) {
         return;
     }
-    uint32_t now = AP_HAL::native_millis();
+    uint32_t now = AP_HAL::millis();
     if (now - start_ms > 1500) {
         rainbow_done = true;
 #if defined (HAL_PERIPH_ENABLE_NOTIFY)
@@ -374,7 +386,7 @@ void AP_Periph_FW::update()
 #endif
 
     static uint32_t last_led_ms;
-    uint32_t now = AP_HAL::native_millis();
+    uint32_t now = AP_HAL::millis();
     if (now - last_led_ms > 1000) {
         last_led_ms = now;
 #ifdef HAL_GPIO_PIN_LED
@@ -449,6 +461,10 @@ void AP_Periph_FW::update()
     }
 #endif
 
+#ifdef HAL_PERIPH_ENABLE_RCIN
+    rcin_update();
+#endif
+
     static uint32_t fiftyhz_last_update_ms;
     if (now - fiftyhz_last_update_ms >= 20) {
         // update at 50Hz
@@ -470,11 +486,22 @@ void AP_Periph_FW::update()
     temperature_sensor.update();
 #endif
 
+#ifdef HAL_PERIPH_ENABLE_RPM
+    if (now - rpm_last_update_ms >= 100) {
+        rpm_last_update_ms = now;
+        rpm_sensor.update();
+    }
+#endif
+
 #if HAL_LOGGING_ENABLED
     logger.periodic_tasks();
 #endif
 
     can_update();
+
+#ifdef HAL_PERIPH_ENABLE_NETWORKING
+    networking.update();
+#endif
 
 #if (defined(HAL_PERIPH_NEOPIXEL_COUNT_WITHOUT_NOTIFY) && HAL_PERIPH_NEOPIXEL_COUNT_WITHOUT_NOTIFY == 8) || defined(HAL_PERIPH_ENABLE_NOTIFY)
     update_rainbow();

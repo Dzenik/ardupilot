@@ -83,6 +83,10 @@
 #include <AP_Landing/AP_Landing.h>
 #include <AP_LandingGear/AP_LandingGear.h>     // Landing Gear library
 #include <AP_Follow/AP_Follow.h>
+#include <AP_ExternalControl/AP_ExternalControl_config.h>
+#if AP_EXTERNAL_CONTROL_ENABLED
+#include <AP_ExternalControl/AP_ExternalControl.h>
+#endif
 
 #include "GCS_Mavlink.h"
 #include "GCS_Plane.h"
@@ -217,6 +221,9 @@ private:
     // are we doing calibration? This is used to allow heartbeat to
     // external failsafe boards during baro and airspeed calibration
     bool in_calibration;
+
+    // are we currently in long failsafe but have postponed it in MODE TAKEOFF until min level alt is reached
+    bool long_failsafe_pending;
 
     // GCS selection
     GCS_Plane _gcs; // avoid using this; use gcs()
@@ -766,6 +773,11 @@ private:
     AP_Arming_Plane arming;
 
     AP_Param param_loader {var_info};
+
+    // dummy implementation of external control
+#if AP_EXTERNAL_CONTROL_ENABLED
+    AP_ExternalControl external_control;
+#endif
 
     static const AP_Scheduler::Task scheduler_tasks[];
     static const AP_Param::Info var_info[];

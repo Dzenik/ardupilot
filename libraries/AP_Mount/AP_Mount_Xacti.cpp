@@ -231,7 +231,8 @@ void AP_Mount_Xacti::send_camera_information(mavlink_channel_t chan) const
         0,                      // lens_id uint8_t
         flags,                  // flags uint32_t (CAMERA_CAP_FLAGS)
         0,                      // cam_definition_version uint16_t
-        cam_definition_uri);    // cam_definition_uri char[140]
+        cam_definition_uri,     // cam_definition_uri char[140]
+        _instance + 1);         // gimbal_device_id uint8_t
 }
 
 // send camera settings message to GCS
@@ -469,7 +470,7 @@ void AP_Mount_Xacti::send_gimbal_control(uint8_t mode, int16_t pitch_cd, int16_t
     }
 
     // send at no faster than 5hz
-    const uint32_t now_ms = AP_HAL::native_millis();
+    const uint32_t now_ms = AP_HAL::millis();
     if (now_ms - last_send_gimbal_control_ms < 200) {
         return;
     }
@@ -493,7 +494,7 @@ void AP_Mount_Xacti::send_copter_att_status()
     }
 
     // send at no faster than 5hz
-    const uint32_t now_ms = AP_HAL::native_millis();
+    const uint32_t now_ms = AP_HAL::millis();
     if (now_ms - last_send_copter_att_status_ms < 100) {
         return;
     }

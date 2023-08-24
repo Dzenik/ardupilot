@@ -17,8 +17,6 @@
     SITL.cpp - software in the loop state
 */
 
-#define ALLOW_DOUBLE_MATH_FUNCTIONS
-
 #include "SITL.h"
 
 #if AP_SIM_ENABLED
@@ -79,6 +77,11 @@ const AP_Param::GroupInfo SIM::var_info[] = {
     AP_GROUPINFO("WIND_TURB",     11, SIM,  wind_turbulance,  0),
     AP_GROUPINFO("SERVO_SPEED",   16, SIM,  servo_speed,  0.14),
     AP_GROUPINFO("SONAR_ROT",     17, SIM,  sonar_rot, Rotation::ROTATION_PITCH_270),
+    // @Param: BATT_VOLTAGE
+    // @DisplayName: Simulated battery voltage
+    // @Description: Simulated battery (constant) voltage
+    // @Units: V
+    // @User: Advanced
     AP_GROUPINFO("BATT_VOLTAGE",  19, SIM,  batt_voltage,  12.6f),
     AP_GROUPINFO("BATT_CAP_AH",   20, SIM,  batt_capacity_ah,  0),
     AP_GROUPINFO("SONAR_GLITCH",  23, SIM,  sonar_glitch, 0),
@@ -94,6 +97,14 @@ const AP_Param::GroupInfo SIM::var_info[] = {
     // @Description: If set, if a numerical error occurs SITL will die with a floating point exception.
     // @User: Advanced
     AP_GROUPINFO("FLOAT_EXCEPT",  28, SIM,  float_exception, 1),
+
+    // @Param: CAN_SRV_MSK
+    // @DisplayName: Mask of CAN servos/ESCs
+    // @Description: The set of actuators controlled externally by CAN SITL AP_Periph
+    // @Bitmask: 0: Servo 1, 1: Servo 2, 2: Servo 3, 3: Servo 4, 4: Servo 5, 5: Servo 6, 6: Servo 7, 7: Servo 8, 8: Servo 9, 9: Servo 10, 10: Servo 11, 11: Servo 12, 12: Servo 13, 13: Servo 14, 14: Servo 15, 15: Servo 16, 16: Servo 17, 17: Servo 18, 18: Servo 19, 19: Servo 20, 20: Servo 21, 21: Servo 22, 22: Servo 23, 23: Servo 24, 24: Servo 25, 25: Servo 26, 26: Servo 27, 27: Servo 28, 28: Servo 29, 29: Servo 30, 30: Servo 31, 31: Servo 32
+    // @User: Advanced
+    AP_GROUPINFO("CAN_SRV_MSK",   29, SIM,  can_servo_mask, 0),
+
     AP_GROUPINFO("SONAR_SCALE",   32, SIM,  sonar_scale, 12.1212f),
     AP_GROUPINFO("FLOW_ENABLE",   33, SIM,  flow_enable, 0),
     AP_GROUPINFO("TERRAIN",       34, SIM,  terrain_enable, 1),
@@ -602,11 +613,24 @@ const AP_Param::GroupInfo SIM::var_ins[] = {
 #if INS_MAX_INSTANCES > 2
     AP_GROUPINFO("ACC3_RND",     13, SIM, accel_noise[2], 0),
 #endif
+    // @Param: GYR1_SCALE
+    // @DisplayName: Gyro 1 scaling factor
+    // @Description: scaling factors applied to simulated gyroscope
+    // @User: Advanced
+    // @Vector3Parameter: 1
     AP_GROUPINFO("GYR1_SCALE",   14, SIM, gyro_scale[0], 0),
 #if INS_MAX_INSTANCES > 1
+    // @Param: GYR2_SCALE
+    // @DisplayName: Gyro 2 scaling factor
+    // @CopyFieldsFrom: SIM_GYR1_SCALE
+    // @Vector3Parameter: 1
     AP_GROUPINFO("GYR2_SCALE",   15, SIM, gyro_scale[1], 0),
 #endif
 #if INS_MAX_INSTANCES > 2
+    // @Param: GYR3_SCALE
+    // @DisplayName: Gyro 3 scaling factor
+    // @CopyFieldsFrom: SIM_GYR1_SCALE
+    // @Vector3Parameter: 1
     AP_GROUPINFO("GYR3_SCALE",   16, SIM, gyro_scale[2], 0),
 #endif
     // @Param: ACCEL1_FAIL
@@ -643,11 +667,25 @@ const AP_Param::GroupInfo SIM::var_ins[] = {
     // @Values: 0:Disabled, 1:Readings stopped
     // @User: Advanced
     AP_GROUPINFO("ACC_FAIL_MSK", 21, SIM, accel_fail_mask,  0),
+
+    // @Param: ACC1_SCAL
+    // @DisplayName: Accel 1 scaling factor
+    // @Description: scaling factors applied to simulated accelerometer
+    // @User: Advanced
+    // @Vector3Parameter: 1
     AP_GROUPINFO("ACC1_SCAL",    22, SIM, accel_scale[0], 0),
 #if INS_MAX_INSTANCES > 1
+    // @Param: ACC2_SCAL
+    // @DisplayName: Accel 2 scaling factor
+    // @CopyFieldsFrom: SIM_ACC1_SCAL
+    // @Vector3Parameter: 1
     AP_GROUPINFO("ACC2_SCAL",    23, SIM, accel_scale[1], 0),
 #endif
 #if INS_MAX_INSTANCES > 2
+    // @Param: ACC3_SCAL
+    // @DisplayName: Accel 3 scaling factor
+    // @CopyFieldsFrom: SIM_ACC1_SCAL
+    // @Vector3Parameter: 1
     AP_GROUPINFO("ACC3_SCAL",    24, SIM, accel_scale[2], 0),
 #endif
     AP_GROUPINFO("ACC_TRIM",     25, SIM, accel_trim, 0),
@@ -731,6 +769,10 @@ const AP_Param::GroupInfo SIM::var_ins[] = {
 #endif
 
 #if INS_MAX_INSTANCES > 3
+    // @Param: ACC4_SCAL
+    // @DisplayName: Accel 4 scaling factor
+    // @CopyFieldsFrom: SIM_ACC1_SCAL
+    // @Vector3Parameter: 1
     AP_GROUPINFO("ACC4_SCAL",    34, SIM, accel_scale[3], 0),
 
     // @Param: ACCEL4_FAIL
@@ -740,6 +782,10 @@ const AP_Param::GroupInfo SIM::var_ins[] = {
     // @User: Advanced
     AP_GROUPINFO("ACCEL4_FAIL",  35, SIM, accel_fail[3],  0),
 
+    // @Param: GYR4_SCALE
+    // @DisplayName: Gyro 4 scaling factor
+    // @CopyFieldsFrom: SIM_GYR1_SCALE
+    // @Vector3Parameter: 1
     AP_GROUPINFO("GYR4_SCALE",   36, SIM, gyro_scale[3], 0),
 
     AP_GROUPINFO("ACC4_RND",     37, SIM, accel_noise[3], 0),
@@ -768,6 +814,10 @@ const AP_Param::GroupInfo SIM::var_ins[] = {
 #endif
 
 #if INS_MAX_INSTANCES > 4
+    // @Param: ACC5_SCAL
+    // @DisplayName: Accel 4 scaling factor
+    // @CopyFieldsFrom: SIM_ACC1_SCAL
+    // @Vector3Parameter: 1
     AP_GROUPINFO("ACC5_SCAL",    41, SIM, accel_scale[4], 0),
 
 
@@ -778,6 +828,10 @@ const AP_Param::GroupInfo SIM::var_ins[] = {
     // @User: Advanced
     AP_GROUPINFO("ACCEL5_FAIL",  42, SIM, accel_fail[4],  0),
 
+    // @Param: GYR5_SCALE
+    // @DisplayName: Gyro 5 scaling factor
+    // @CopyFieldsFrom: SIM_GYR1_SCALE
+    // @Vector3Parameter: 1
     AP_GROUPINFO("GYR5_SCALE",   43, SIM, gyro_scale[4], 0),
 
     AP_GROUPINFO("ACC5_RND",     44, SIM, accel_noise[4], 0),
@@ -967,7 +1021,7 @@ float SIM::get_rangefinder(uint8_t instance) {
     if (instance < ARRAY_SIZE(state.rangefinder_m)) {
         return state.rangefinder_m[instance];
     }
-    return -1;
+    return nanf("");
 };
 
 float SIM::measure_distance_at_angle_bf(const Location &location, float angle) const

@@ -203,6 +203,7 @@ class Context(object):
         self.original_heartbeat_interval_ms = None
         self.installed_scripts = []
         self.installed_modules = []
+        self.overridden_message_rates = {}
 
 
 # https://stackoverflow.com/questions/616645/how-do-i-duplicate-sys-stdout-to-a-log-file-in-python
@@ -2139,34 +2140,19 @@ class AutoTest(ABC):
             "SIM_ACC1_BIAS_Y",
             "SIM_ACC1_BIAS_Z",
             "SIM_ACC1_RND",
-            "SIM_ACC1_SCAL_X",
-            "SIM_ACC1_SCAL_Y",
-            "SIM_ACC1_SCAL_Z",
             "SIM_ACC2_BIAS_X",
             "SIM_ACC2_BIAS_Y",
             "SIM_ACC2_BIAS_Z",
             "SIM_ACC2_RND",
-            "SIM_ACC2_SCAL_X",
-            "SIM_ACC2_SCAL_Y",
-            "SIM_ACC2_SCAL_Z",
             "SIM_ACC3_BIAS_X",
             "SIM_ACC3_BIAS_Y",
             "SIM_ACC3_BIAS_Z",
             "SIM_ACC3_RND",
-            "SIM_ACC3_SCAL_X",
-            "SIM_ACC3_SCAL_Y",
-            "SIM_ACC3_SCAL_Z",
             "SIM_ACC4_RND",
-            "SIM_ACC4_SCAL_X",
-            "SIM_ACC4_SCAL_Y",
-            "SIM_ACC4_SCAL_Z",
             "SIM_ACC4_BIAS_X",
             "SIM_ACC4_BIAS_Y",
             "SIM_ACC4_BIAS_Z",
             "SIM_ACC5_RND",
-            "SIM_ACC5_SCAL_X",
-            "SIM_ACC5_SCAL_Y",
-            "SIM_ACC5_SCAL_Z",
             "SIM_ACC5_BIAS_X",
             "SIM_ACC5_BIAS_Y",
             "SIM_ACC5_BIAS_Z",
@@ -2223,7 +2209,6 @@ class AutoTest(ABC):
             "SIM_BARO_WCF_RGT",
             "SIM_BARO_WCF_UP",
             "SIM_BATT_CAP_AH",
-            "SIM_BATT_VOLTAGE",
             "SIM_BAUDLIMIT_EN",
             "SIM_DRIFT_SPEED",
             "SIM_DRIFT_TIME",
@@ -2281,25 +2266,10 @@ class AutoTest(ABC):
             "SIM_GPS_VERR_Y",
             "SIM_GPS_VERR_Z",
             "SIM_GYR1_RND",
-            "SIM_GYR1_SCALE_X",
-            "SIM_GYR1_SCALE_Y",
-            "SIM_GYR1_SCALE_Z",
             "SIM_GYR2_RND",
-            "SIM_GYR2_SCALE_X",
-            "SIM_GYR2_SCALE_Y",
-            "SIM_GYR2_SCALE_Z",
             "SIM_GYR3_RND",
-            "SIM_GYR3_SCALE_X",
-            "SIM_GYR3_SCALE_Y",
-            "SIM_GYR3_SCALE_Z",
             "SIM_GYR4_RND",
-            "SIM_GYR4_SCALE_X",
-            "SIM_GYR4_SCALE_Y",
-            "SIM_GYR4_SCALE_Z",
             "SIM_GYR5_RND",
-            "SIM_GYR5_SCALE_X",
-            "SIM_GYR5_SCALE_Y",
-            "SIM_GYR5_SCALE_Z",
             "SIM_GYR_FAIL_MSK",
             "SIM_GYR_FILE_RW",
             "SIM_IE24_ENABLE",
@@ -3450,6 +3420,14 @@ class AutoTest(ABC):
         if m.temperature_air == -128: # High_Latency2 defaults to INT8_MIN for no temperature available
             raise NotAchievedException("Air Temperature not received from HIGH_LATENCY2")
         self.HIGH_LATENCY2_links()
+
+    def context_set_message_rate_hz(self, id, rate_hz):
+        overridden_message_rates = self.context_get().overridden_message_rates
+
+        if id not in overridden_message_rates:
+            overridden_message_rates[id] = self.get_message_rate(id)
+
+        self.set_message_rate_hz(id, rate_hz)
 
     def HIGH_LATENCY2_links(self):
 
@@ -5654,6 +5632,8 @@ class AutoTest(ABC):
             self.remove_message_hook(hook)
         for script in dead.installed_scripts:
             self.remove_installed_script(script)
+        for (message_id, interval_us) in dead.overridden_message_rates.items():
+            self.set_message_interval(message_id, interval_us)
         for module in dead.installed_modules:
             print("Removing module (%s)" % module)
             self.remove_installed_modules(module)
@@ -8081,10 +8061,11 @@ Also, ignores heartbeats not from our target system'''
         count = 0
         for sup_binary in self.sup_binaries:
             self.progress("Starting Supplementary Program ", sup_binary)
-            start_sitl_args["customisations"] = [sup_binary[1]]
+            start_sitl_args["customisations"] = [sup_binary['customisation']]
             start_sitl_args["supplementary"] = True
-            start_sitl_args["stdout_prefix"] = "%s-%u" % (os.path.basename(sup_binary[0]), count)
-            sup_prog_link = util.start_SITL(sup_binary[0], **start_sitl_args)
+            start_sitl_args["stdout_prefix"] = "%s-%u" % (os.path.basename(sup_binary['binary']), count)
+            start_sitl_args["defaults_filepath"] = sup_binary['param_file']
+            sup_prog_link = util.start_SITL(sup_binary['binary'], **start_sitl_args)
             self.sup_prog.append(sup_prog_link)
             self.expect_list_add(sup_prog_link)
             count += 1
@@ -8127,25 +8108,18 @@ Also, ignores heartbeats not from our target system'''
             "callgrind": self.callgrind,
             "wipe": True,
         }
-        if instance is None:
-            for sup_binary in self.sup_binaries:
-                start_sitl_args["customisations"] = [sup_binary[1]]
-                if args is not None:
-                    start_sitl_args["customisations"] = [sup_binary[1], args]
-                start_sitl_args["supplementary"] = True
-                sup_prog_link = util.start_SITL(sup_binary[0], **start_sitl_args)
-                time.sleep(3)
-                self.sup_prog.append(sup_prog_link) # add to list
-                self.expect_list_add(sup_prog_link) # add to expect list
-        else:
-            # start only the instance passed
-            start_sitl_args["customisations"] = [self.sup_binaries[instance][1]]
+        for i in range(len(self.sup_binaries)):
+            if instance is not None and instance != i:
+                continue
+            sup_binary = self.sup_binaries[i]
+            start_sitl_args["customisations"] = [sup_binary['customisation']]
             if args is not None:
-                start_sitl_args["customisations"] = [self.sup_binaries[instance][1], args]
+                start_sitl_args["customisations"] = [sup_binary['customisation'], args]
             start_sitl_args["supplementary"] = True
-            sup_prog_link = util.start_SITL(self.sup_binaries[instance][0], **start_sitl_args)
-            time.sleep(3)
-            self.sup_prog[instance] = sup_prog_link # add to list
+            start_sitl_args["defaults_filepath"] = sup_binary['param_file']
+            sup_prog_link = util.start_SITL(sup_binary['binary'], **start_sitl_args)
+            time.sleep(1)
+            self.sup_prog[i] = sup_prog_link # add to list
             self.expect_list_add(sup_prog_link) # add to expect list
 
     def sitl_is_running(self):
@@ -9775,6 +9749,25 @@ Also, ignores heartbeats not from our target system'''
             0,
             0,
             0)
+
+    def get_message_interval(self, victim_message, mav=None):
+        '''returns message interval in microseconds'''
+        self.send_get_message_interval(victim_message, mav=mav)
+        m = self.assert_receive_message('MESSAGE_INTERVAL', timeout=1, mav=mav)
+        if m.message_id != victim_message:
+            raise NotAchievedException("Unexpected ID in MESSAGE_INTERVAL")
+        return m.interval_us
+
+    def set_message_interval(self, victim_message, interval_us, mav=None):
+        '''sets message interval in microseconds'''
+        if type(victim_message) == str:
+            victim_message = eval("mavutil.mavlink.MAVLINK_MSG_ID_%s" % victim_message)
+        self.run_cmd(
+            mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+            p1=victim_message,
+            p2=interval_us,
+            mav=mav,
+        )
 
     def test_rate(self,
                   desc,
@@ -11628,6 +11621,17 @@ switch value'''
             self.progress("Correct value %.4f for %s error %.2f%%" %
                           (v, pname, error_pct))
 
+    def user_takeoff(self, alt_min=30, timeout=30, max_err=5):
+        '''takeoff using mavlink takeoff command'''
+        self.run_cmd(
+            mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+            p7=alt_min, # param7
+        )
+        self.wait_altitude(alt_min - 1,
+                           (alt_min + max_err),
+                           relative=True,
+                           timeout=timeout)
+
     def ahrstrim_attitude_correctness(self):
         self.wait_ready_to_arm()
         HOME = self.sitl_start_location()
@@ -13007,6 +13011,7 @@ switch value'''
             (6, "SBP", None, "SBP", 5, 'detected'),
             # (7, "SBP2", 9, "SBP2", 5),  # broken, "waiting for config data"
             (8, "NOVA", 15, "NOVA", 5, 'detected'),  # no attempt to auto-detect this in AP_GPS
+            (11, "GSOF", 11, "GSOF", 5, 'detected'),
             (19, "MSP", 19, "MSP", 32, 'specified'),  # no attempt to auto-detect this in AP_GPS
             # (9, "FILE"),
         ]

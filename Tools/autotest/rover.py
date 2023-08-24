@@ -342,38 +342,21 @@ class AutoTestRover(AutoTest):
 
     def DriveMaxRCIN(self, timeout=30):
         """Drive rover at max RC inputs"""
-        self.context_push()
-        ex = None
+        self.progress("Testing max RC inputs")
+        self.change_mode("MANUAL")
 
-        try:
-            self.progress("Testing max RC inputs")
-            self.change_mode("MANUAL")
+        self.wait_ready_to_arm()
+        self.arm_vehicle()
 
-            self.wait_ready_to_arm()
-            self.arm_vehicle()
+        self.set_rc(3, 2000)
+        self.set_rc(1, 1000)
 
-            self.set_rc(3, 2000)
-            self.set_rc(1, 1000)
-
-            tstart = self.get_sim_time()
-            while self.get_sim_time_cached() - tstart < timeout:
-                m = self.mav.recv_match(type='VFR_HUD', blocking=True, timeout=1)
-                if m is not None:
-                    self.progress("Current speed: %f" % m.groundspeed)
-
-            # reduce throttle
-            self.set_rc(3, 1500)
-            self.set_rc(1, 1500)
-
-        except Exception as e:
-            self.print_exception_caught(e)
-            ex = e
+        tstart = self.get_sim_time()
+        while self.get_sim_time_cached() - tstart < timeout:
+            m = self.assert_receive_message('VFR_HUD')
+            self.progress("Current speed: %f" % m.groundspeed)
 
         self.disarm_vehicle()
-        self.context_pop()
-
-        if ex:
-            raise ex
 
     #################################################
     # AUTOTEST ALL
@@ -607,6 +590,55 @@ Brakes have negligible effect (with=%0.2fm without=%0.2fm delta=%0.2fm)
             raise NotAchievedException(
                 "Pin mask unchanged after relay cmd")
         self.progress("Pin mask changed after relay command")
+        self.do_set_relay(0, 0)
+
+        self.set_message_rate_hz("RELAY_STATUS", 10)
+
+        # default configuration for relays in sim have one relay:
+        self.assert_received_message_field_values('RELAY_STATUS', {
+            "present": 3,
+            "on": 0,
+        })
+        self.do_set_relay(0, 1)
+        self.assert_received_message_field_values('RELAY_STATUS', {
+            "present": 3,
+            "on": 1,
+        })
+        self.do_set_relay(1, 1)
+        self.assert_received_message_field_values('RELAY_STATUS', {
+            "present": 3,
+            "on": 3,
+        })
+        self.do_set_relay(0, 0)
+        self.do_set_relay(1, 0)
+        self.assert_received_message_field_values('RELAY_STATUS', {
+            "present": 3,
+            "on": 0,
+        })
+
+        # add another servo:
+        self.set_parameter("RELAY_PIN6", 14)
+        self.assert_received_message_field_values('RELAY_STATUS', {
+            "present": 35,
+            "on": 0,
+        })
+        self.do_set_relay(5, 1)
+        self.assert_received_message_field_values('RELAY_STATUS', {
+            "present": 35,
+            "on": 32,
+        })
+        self.do_set_relay(0, 1)
+        self.assert_received_message_field_values('RELAY_STATUS', {
+            "present": 35,
+            "on": 33,
+        })
+        self.do_set_relay(5, 0)
+        self.assert_received_message_field_values('RELAY_STATUS', {
+            "present": 35,
+            "on": 1,
+        })
+
+        self.set_message_rate_hz("RELAY_STATUS", 0)
 
     def MAVProxy_SetModeUsingSwitch(self):
         """Set modes via mavproxy switch"""
@@ -6282,6 +6314,84 @@ Brakes have negligible effect (with=%0.2fm without=%0.2fm delta=%0.2fm)
             # both the vehicle and this tests's special heartbeat
             raise NotAchievedException("Got heartbeat on private channel from non-vehicle")
 
+    def MAV_CMD_DO_SET_REVERSE(self):
+        '''test MAV_CMD_DO_SET_REVERSE command'''
+        self.change_mode('GUIDED')
+        self.wait_ready_to_arm()
+        self.arm_vehicle()
+
+        here = self.mav.location()
+        target_loc = self.offset_location_ne(here, 2000, 0)
+        self.send_guided_mission_item(target_loc)
+
+        self.wait_groundspeed(3, 100, minimum_duration=5)
+
+        for method in self.run_cmd, self.run_cmd_int:
+            self.progress("Forwards!")
+            method(mavutil.mavlink.MAV_CMD_DO_SET_REVERSE, p1=0)
+            self.wait_heading(0)
+
+            self.progress("Backwards!")
+            method(mavutil.mavlink.MAV_CMD_DO_SET_REVERSE, p1=1)
+            self.wait_heading(180)
+
+            self.progress("Forwards!")
+            method(mavutil.mavlink.MAV_CMD_DO_SET_REVERSE, p1=0)
+            self.wait_heading(0)
+
+        self.disarm_vehicle()
+
+    def MAV_CMD_NAV_RETURN_TO_LAUNCH(self):
+        '''test MAV_CMD_NAV_RETURN_TO_LAUNCH mavlink command'''
+        self.change_mode('GUIDED')
+        self.wait_ready_to_arm()
+        self.arm_vehicle()
+
+        here = self.mav.location()
+        target_loc = self.offset_location_ne(here, 2000, 0)
+        self.send_guided_mission_item(target_loc)
+        self.wait_distance_to_home(20, 100)
+
+        self.run_cmd(mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH)
+        self.wait_mode('RTL')
+
+        self.change_mode('GUIDED')
+
+        self.run_cmd_int(mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH)
+        self.wait_mode('RTL')
+
+        self.wait_distance_to_home(0, 5, timeout=30)
+        self.disarm_vehicle()
+
+    def MAV_CMD_DO_CHANGE_SPEED(self):
+        '''test MAV_CMD_NAV_RETURN_TO_LAUNCH mavlink command'''
+        self.change_mode('GUIDED')
+        self.wait_ready_to_arm()
+        self.arm_vehicle()
+
+        original_loc = self.mav.location()
+        here = original_loc
+        target_loc = self.offset_location_ne(here, 2000, 0)
+        self.send_guided_mission_item(target_loc)
+        self.wait_distance_to_home(20, 100)
+
+        speeds = 3, 7, 12, 4
+
+        for speed in speeds:
+            self.run_cmd(mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED, p2=speed)
+            self.wait_groundspeed(speed-0.5, speed+0.5, minimum_duration=5)
+
+        self.send_guided_mission_item(original_loc)
+
+        for speed in speeds:
+            self.run_cmd_int(mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED, p2=speed)
+            self.wait_groundspeed(speed-0.5, speed+0.5, minimum_duration=5)
+
+        self.change_mode('RTL')
+
+        self.wait_distance_to_home(0, 5, timeout=30)
+        self.disarm_vehicle()
+
     def tests(self):
         '''return list of all tests'''
         ret = super(AutoTestRover, self).tests()
@@ -6315,6 +6425,7 @@ Brakes have negligible effect (with=%0.2fm without=%0.2fm delta=%0.2fm)
             self.SET_ATTITUDE_TARGET,
             self.SET_POSITION_TARGET_LOCAL_NED,
             self.MAV_CMD_DO_SET_MISSION_CURRENT,
+            self.MAV_CMD_DO_CHANGE_SPEED,
             self.Button,
             self.Rally,
             self.Offboard,
@@ -6348,6 +6459,7 @@ Brakes have negligible effect (with=%0.2fm without=%0.2fm delta=%0.2fm)
             self.DepthFinder,
             self.ChangeModeByNumber,
             self.EStopAtBoot,
+            self.MAV_CMD_NAV_RETURN_TO_LAUNCH,
             self.StickMixingAuto,
             self.AutoDock,
             self.PrivateChannel,
@@ -6356,6 +6468,7 @@ Brakes have negligible effect (with=%0.2fm without=%0.2fm delta=%0.2fm)
             self.DriveMaxRCIN,
             self.NoArmWithoutMissionItems,
             self.CompassPrearms,
+            self.MAV_CMD_DO_SET_REVERSE,
         ])
         return ret
 
