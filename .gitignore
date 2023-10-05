@@ -154,6 +154,19 @@ dumpstack_*out
 build.tmp.binaries/
 tasklist.json
 modules/esp_idf
+<<<<<<< HEAD
 builds
 noname-1.0.tar.bz2
 queue.lck
+=======
+
+# Ignore Python virtual environments
+#   from: https://github.com/github/gitignore/blob/4488915eec0b3a45b5c63ead28f286819c0917de/Python.gitignore#L125
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+>>>>>>> 77945be031cab67da3f6d1fb446b9ddaeaddea90
