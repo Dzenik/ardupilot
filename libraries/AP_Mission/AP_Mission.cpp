@@ -1,15 +1,20 @@
 /// @file    AP_Mission.cpp
 /// @brief   Handles the MAVLINK command mission stack.  Reads and writes mission to storage.
 
+#include "AP_Mission_config.h"
+#include <AP_Vehicle/AP_Vehicle_Type.h>
+#include <AP_Gripper/AP_Gripper_config.h>
+#include <GCS_MAVLink/GCS.h>
+
+#if AP_MISSION_ENABLED
+
 #include "AP_Mission.h"
 #include <AP_Terrain/AP_Terrain.h>
-#include <GCS_MAVLink/GCS.h>
 #include <AP_AHRS/AP_AHRS.h>
 #include <AP_Camera/AP_Camera.h>
-#include <AP_Gripper/AP_Gripper_config.h>
-#include <AP_Vehicle/AP_Vehicle_Type.h>
 #include <AP_BoardConfig/AP_BoardConfig.h>
 #include <AP_ServoRelayEvents/AP_ServoRelayEvents_config.h>
+#include <RC_Channel/RC_Channel_config.h>
 
 const AP_Param::GroupInfo AP_Mission::var_info[] = {
 
@@ -265,7 +270,7 @@ void AP_Mission::reset()
 }
 
 /// clear - clears out mission
-///     returns true if mission was running so it could not be cleared
+///     returns false if mission was running so it could not be cleared
 bool AP_Mission::clear()
 {
     // do not allow clearing the mission while it is running unless disarmed
@@ -405,8 +410,10 @@ bool AP_Mission::start_command(const Mission_Command& cmd)
     }
 
     switch (cmd.id) {
+#if AP_RC_CHANNEL_ENABLED
     case MAV_CMD_DO_AUX_FUNCTION:
         return start_command_do_aux_function(cmd);
+#endif
 #if AP_GRIPPER_ENABLED
     case MAV_CMD_DO_GRIPPER:
         return start_command_do_gripper(cmd);
@@ -538,7 +545,7 @@ int32_t AP_Mission::get_next_ground_course_cd(int32_t default_angle)
 }
 
 // set_current_cmd - jumps to command specified by index
-bool AP_Mission::set_current_cmd(uint16_t index, bool rewind)
+bool AP_Mission::set_current_cmd(uint16_t index)
 {
     // read command to check for DO_LAND_START
     Mission_Command cmd;
@@ -546,10 +553,8 @@ bool AP_Mission::set_current_cmd(uint16_t index, bool rewind)
         _flags.in_landing_sequence = false;
     }
 
-    // mission command has been set and not as rewind command, don't track history.
-    if (!rewind) {
-        reset_wp_history();
-    }
+    // mission command has been set, don't track history.
+    reset_wp_history();
 
     // sanity check index and that we have a mission
     if (index >= (unsigned)_cmd_total || _cmd_total == 1) {
@@ -749,12 +754,12 @@ union PackedContent {
 
 };
 
-assert_storage_size<PackedContent, 12> assert_storage_size_PackedContent;
-
 /// load_cmd_from_storage - load command from storage
 ///     true is return if successful
 bool AP_Mission::read_cmd_from_storage(uint16_t index, Mission_Command& cmd) const
 {
+    ASSERT_STORAGE_SIZE(PackedContent, 12);
+
     WITH_SEMAPHORE(_rsem);
 
     // special handling for command #0 which is home
@@ -827,6 +832,8 @@ bool AP_Mission::read_cmd_from_storage(uint16_t index, Mission_Command& cmd) con
     return true;
 }
 
+#endif  // AP_MISSION_ENABLED
+
 bool AP_Mission::stored_in_location(uint16_t id)
 {
     switch (id) {
@@ -852,6 +859,8 @@ bool AP_Mission::stored_in_location(uint16_t id)
         return false;
     }
 }
+
+#if AP_MISSION_ENABLED
 
 /// write_cmd_to_storage - write a command to storage
 ///     index is used to calculate the storage location
@@ -924,6 +933,8 @@ void AP_Mission::write_home_to_storage()
     home_cmd.content.location = AP::ahrs().get_home();
     write_cmd_to_storage(0,home_cmd);
 }
+
+#endif  // AP_MISSION_ENABLED
 
 MAV_MISSION_RESULT AP_Mission::sanity_check_params(const mavlink_mission_item_int_t& packet)
 {
@@ -1247,11 +1258,14 @@ MAV_MISSION_RESULT AP_Mission::mavlink_int_to_mission_cmd(const mavlink_mission_
         cmd.content.do_engine_control.start_control = (packet.param1>0);
         cmd.content.do_engine_control.cold_start = (packet.param2>0);
         cmd.content.do_engine_control.height_delay_cm = packet.param3*100;
+        cmd.content.do_engine_control.allow_disarmed_start = (((uint32_t)packet.param4) & ENGINE_CONTROL_OPTIONS_ALLOW_START_WHILE_DISARMED) != 0;
         break;
 
+#if AP_MISSION_NAV_PAYLOAD_PLACE_ENABLED
     case MAV_CMD_NAV_PAYLOAD_PLACE:
         cmd.p1 = packet.param1*100; // copy max-descend parameter (m->cm)
         break;
+#endif
 
     case MAV_CMD_NAV_SET_YAW_SPEED:
         cmd.content.set_yaw_speed.angle_deg = packet.param1;        // target angle in degrees
@@ -1481,6 +1495,8 @@ MAV_MISSION_RESULT AP_Mission::convert_MISSION_ITEM_INT_to_MISSION_ITEM(const ma
 
     return MAV_MISSION_ACCEPTED;
 }
+
+#if AP_MISSION_ENABLED
 
 // mission_cmd_to_mavlink_int - converts an AP_Mission::Mission_Command object to a mavlink message which can be sent to the GCS
 //  return true on success, false on failure
@@ -1751,11 +1767,16 @@ bool AP_Mission::mission_cmd_to_mavlink_int(const AP_Mission::Mission_Command& c
         packet.param1 = cmd.content.do_engine_control.start_control?1:0;
         packet.param2 = cmd.content.do_engine_control.cold_start?1:0;
         packet.param3 = cmd.content.do_engine_control.height_delay_cm*0.01f;
+        if (cmd.content.do_engine_control.allow_disarmed_start) {
+            packet.param4 = ENGINE_CONTROL_OPTIONS_ALLOW_START_WHILE_DISARMED;
+        }
         break;
 
+#if AP_MISSION_NAV_PAYLOAD_PLACE_ENABLED
     case MAV_CMD_NAV_PAYLOAD_PLACE:
         packet.param1 = cmd.p1/100.0f; // copy max-descend parameter (cm->m)
         break;
+#endif
 
     case MAV_CMD_NAV_SET_YAW_SPEED:
         packet.param1 = cmd.content.set_yaw_speed.angle_deg;        // target angle in degrees
@@ -2613,8 +2634,10 @@ const char *AP_Mission::Mission_Command::type() const
     case MAV_CMD_DO_GRIPPER:
         return "Gripper";
 #endif
+#if AP_MISSION_NAV_PAYLOAD_PLACE_ENABLED
     case MAV_CMD_NAV_PAYLOAD_PLACE:
         return "PayloadPlace";
+#endif
     case MAV_CMD_DO_PARACHUTE:
         return "Parachute";
     case MAV_CMD_DO_SPRAYER:
@@ -2706,6 +2729,8 @@ bool AP_Mission::contains_item(MAV_CMD command) const
     return false;
 }
 
+#endif  // AP_MISSION_ENABLED
+
 /*
   return true if the mission item has a location
 */
@@ -2714,6 +2739,8 @@ bool AP_Mission::cmd_has_location(const uint16_t command)
 {
     return stored_in_location(command);
 }
+
+#if AP_MISSION_ENABLED
 
 /*
   return true if the mission has a terrain relative item.  ~2200us for 530 items on H7
@@ -2890,3 +2917,5 @@ AP_Mission *mission()
 }
 
 }
+
+#endif  // AP_MISSION_ENABLED

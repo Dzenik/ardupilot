@@ -76,6 +76,9 @@ void AP_Mount_Viewpro::update()
     // send vehicle attitude and position
     send_m_ahrs();
 
+    // change to RC_TARGETING mode if RC input has changed
+    set_rctargeting_on_rcinput_change();
+
     // if tracking is active we do not send new targets to the gimbal
     if (_last_tracking_status == TrackingStatus::SEARCHING || _last_tracking_status == TrackingStatus::TRACKING) {
         return;
@@ -541,7 +544,7 @@ bool AP_Mount_Viewpro::send_target_angles(float pitch_rad, float yaw_rad, bool y
     }
 
     // convert yaw angle to body-frame
-    float yaw_bf_rad = yaw_is_ef ? wrap_PI(yaw_rad - AP::ahrs().yaw) : yaw_rad;
+    float yaw_bf_rad = yaw_is_ef ? wrap_PI(yaw_rad - AP::ahrs().get_yaw()) : yaw_rad;
 
     // enforce body-frame yaw angle limits.  If beyond limits always use body-frame control
     const float yaw_bf_min = radians(_params.yaw_angle_min);
@@ -668,6 +671,7 @@ bool AP_Mount_Viewpro::send_m_ahrs()
         return false;
     }
 
+#if AP_RTC_ENABLED
     // get date and time
     uint16_t year, ms;
     uint8_t month, day, hour, min, sec;
@@ -676,6 +680,10 @@ bool AP_Mount_Viewpro::send_m_ahrs()
     }
     uint16_t date = ((year-2000) & 0x7f) | (((month+1) & 0x0F) << 7) | ((day & 0x1F) << 11);
     uint64_t second_hundredths = (((hour * 60 * 60) + (min * 60) + sec) * 100) + (ms * 0.1);
+#else
+    const uint16_t date = 0;
+    const uint64_t second_hundredths = 0;
+#endif
 
     // get vehicle velocity in m/s in NED Frame
     Vector3f vel_NED;

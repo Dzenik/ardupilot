@@ -346,13 +346,17 @@ static const ap_message STREAM_RAW_SENSORS_msgs[] = {
 static const ap_message STREAM_EXTENDED_STATUS_msgs[] = {
     MSG_SYS_STATUS,
     MSG_POWER_STATUS,
+#if HAL_WITH_MCU_MONITORING
     MSG_MCU_STATUS,
+#endif
     MSG_MEMINFO,
     MSG_CURRENT_WAYPOINT,
     MSG_GPS_RAW,
     MSG_GPS_RTK,
+#if GPS_MAX_RECEIVERS > 1
     MSG_GPS2_RAW,
     MSG_GPS2_RTK,
+#endif
     MSG_NAV_CONTROLLER_OUTPUT,
 #if AP_FENCE_ENABLED
     MSG_FENCE_STATUS,
@@ -370,7 +374,9 @@ static const ap_message STREAM_RC_CHANNELS_msgs[] = {
 };
 static const ap_message STREAM_EXTRA1_msgs[] = {
     MSG_ATTITUDE,
+#if AP_SIM_ENABLED
     MSG_SIMSTATE,
+#endif
     MSG_AHRS2,
     MSG_PID_TUNING
 };
@@ -385,9 +391,15 @@ static const ap_message STREAM_EXTRA3_msgs[] = {
 #if AP_TERRAIN_AVAILABLE
     MSG_TERRAIN,
 #endif
+#if AP_BATTERY_ENABLED
     MSG_BATTERY_STATUS,
+#endif
+#if HAL_MOUNT_ENABLED
     MSG_GIMBAL_DEVICE_ATTITUDE_STATUS,
+#endif
+#if AP_OPTICALFLOW_ENABLED
     MSG_OPTICAL_FLOW,
+#endif
 #if COMPASS_CAL_ENABLED
     MSG_MAG_CAL_REPORT,
     MSG_MAG_CAL_PROGRESS,
@@ -397,7 +409,9 @@ static const ap_message STREAM_EXTRA3_msgs[] = {
 #if AP_RPM_ENABLED
     MSG_RPM,
 #endif
+#if HAL_WITH_ESC_TELEM
     MSG_ESC_TELEMETRY,
+#endif
 };
 static const ap_message STREAM_PARAMS_msgs[] = {
     MSG_NEXT_PARAM
@@ -467,6 +481,9 @@ MAV_RESULT GCS_MAVLINK_Sub::handle_command_int_packet(const mavlink_command_int_
 {
     switch(packet.command) {
 
+    case MAV_CMD_CONDITION_YAW:
+        return handle_MAV_CMD_CONDITION_YAW(packet);
+
     case MAV_CMD_DO_CHANGE_SPEED:
         return handle_MAV_CMD_DO_CHANGE_SPEED(packet);
 
@@ -503,11 +520,8 @@ MAV_RESULT GCS_MAVLINK_Sub::handle_MAV_CMD_NAV_LAND(const mavlink_command_int_t 
         return MAV_RESULT_ACCEPTED;
 }
 
-MAV_RESULT GCS_MAVLINK_Sub::handle_command_long_packet(const mavlink_command_long_t &packet, const mavlink_message_t &msg)
+MAV_RESULT GCS_MAVLINK_Sub::handle_MAV_CMD_CONDITION_YAW(const mavlink_command_int_t &packet)
 {
-    switch (packet.command) {
-
-    case MAV_CMD_CONDITION_YAW:
         // param1 : target angle [0-360]
         // param2 : speed during change [deg per second]
         // param3 : direction (-1:ccw, +1:cw)
@@ -518,11 +532,7 @@ MAV_RESULT GCS_MAVLINK_Sub::handle_command_long_packet(const mavlink_command_lon
             sub.mode_auto.set_auto_yaw_look_at_heading(packet.param1, packet.param2, (int8_t)packet.param3, (uint8_t)packet.param4);
             return MAV_RESULT_ACCEPTED;
         }
-        return MAV_RESULT_FAILED;
-
-    default:
-        return GCS_MAVLINK::handle_command_long_packet(packet, msg);
-    }
+        return MAV_RESULT_DENIED;
 }
 
 MAV_RESULT GCS_MAVLINK_Sub::handle_MAV_CMD_DO_CHANGE_SPEED(const mavlink_command_int_t &packet)
@@ -573,7 +583,23 @@ void GCS_MAVLINK_Sub::handleMessage(const mavlink_message_t &msg)
             break; // only accept control aimed at us
         }
 
-        sub.transform_manual_control_to_rc_override(packet.x,packet.y,packet.z,packet.r,packet.buttons);
+        sub.transform_manual_control_to_rc_override(
+            packet.x,
+            packet.y,
+            packet.z,
+            packet.r,
+            packet.buttons,
+            packet.buttons2,
+            packet.enabled_extensions,
+            packet.s,
+            packet.t,
+            packet.aux1,
+            packet.aux2,
+            packet.aux3,
+            packet.aux4,
+            packet.aux5,
+            packet.aux6
+        );
 
         sub.failsafe.last_pilot_input_ms = AP_HAL::millis();
         // a RC override message is considered to be a 'heartbeat'

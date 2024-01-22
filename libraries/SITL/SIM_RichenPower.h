@@ -15,7 +15,7 @@
 /*
   Simulator for the RichenPower Hybrid generators
 
-./Tools/autotest/sim_vehicle.py --gdb --debug -v ArduCopter -A --uartF=sim:richenpower --speedup=1 --console
+./Tools/autotest/sim_vehicle.py --gdb --debug -v ArduCopter -A --serial5=sim:richenpower --speedup=1 --console
 
 param set SERIAL5_PROTOCOL 30
 param set SERIAL5_BAUD 9600
@@ -124,7 +124,6 @@ private:
         uint8_t footermagic1;
         uint8_t footermagic2;
     };
-    assert_storage_size<RichenPacket, 70> _assert_storage_size_RichenPacket UNUSED_PRIVATE_MEMBER;
 
     union RichenUnion {
         uint8_t parse_buffer[70];

@@ -30,6 +30,8 @@ extern const AP_HAL::HAL& hal;
 // init method; configure communications with the generator
 void AP_Generator_RichenPower::init()
 {
+    ASSERT_STORAGE_SIZE(RichenPacket, 70);
+
     const AP_SerialManager &serial_manager = AP::serialmanager();
 
     uart = serial_manager.find_serial(AP_SerialManager::SerialProtocol_Generator, 0);
@@ -190,7 +192,7 @@ bool AP_Generator_RichenPower::generator_ok_to_run() const
 constexpr float AP_Generator_RichenPower::heat_required_for_run()
 {
     // assume that heat is proportional to RPM.  Return a number
-    // proportial to RPM.  Reduce it to account for the cooling some%/s
+    // proportional to RPM.  Reduce it to account for the cooling some%/s
     // cooling
     return (45 * IDLE_RPM) * heat_environment_loss_30s;
 }

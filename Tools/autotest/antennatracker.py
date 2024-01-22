@@ -14,15 +14,15 @@ import os
 from pymavlink import mavextra
 from pymavlink import mavutil
 
-from common import AutoTest
-from common import NotAchievedException
+import vehicle_test_suite
+from vehicle_test_suite import NotAchievedException
 
 # get location of scripts
 testdir = os.path.dirname(os.path.realpath(__file__))
 SITL_START_LOCATION = mavutil.location(-27.274439, 151.290064, 343, 8.7)
 
 
-class AutoTestTracker(AutoTest):
+class AutoTestTracker(vehicle_test_suite.TestSuite):
 
     def log_name(self):
         return "AntennaTracker"
@@ -162,6 +162,13 @@ class AutoTestTracker(AutoTest):
                                           timeout=90,
                                           comparator=operator.le)
 
+    def BaseMessageSet(self):
+        '''ensure we're getting messages we expect'''
+        self.set_parameter('BATT_MONITOR', 4)
+        self.reboot_sitl()
+        for msg in 'BATTERY_STATUS', :
+            self.assert_receive_message(msg)
+
     def disabled_tests(self):
         return {
             "ArmFeatures": "See https://github.com/ArduPilot/ardupilot/issues/10652",
@@ -178,5 +185,6 @@ class AutoTestTracker(AutoTest):
             self.MAV_CMD_MISSION_START,
             self.NMEAOutput,
             self.SCAN,
+            self.BaseMessageSet,
         ])
         return ret

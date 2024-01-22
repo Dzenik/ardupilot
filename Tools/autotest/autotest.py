@@ -36,7 +36,7 @@ import examples
 from pysim import util
 from pymavlink.generator import mavtemplate
 
-from common import Test
+from vehicle_test_suite import Test
 
 tester = None
 
@@ -98,7 +98,7 @@ def build_binaries():
 
 def build_examples(**kwargs):
     """Build examples."""
-    for target in 'fmuv2', 'Pixhawk1', 'navio', 'linux':
+    for target in 'Pixhawk1', 'navio', 'linux':
         print("Running build.examples for %s" % target)
         try:
             util.build_examples(target, **kwargs)
@@ -186,7 +186,9 @@ def all_vehicles():
             'Rover',
             'AntennaTracker',
             'ArduSub',
-            'Blimp')
+            'Blimp',
+            'AP_Periph',
+            )
 
 
 def build_parameters():
@@ -284,7 +286,7 @@ __bin_names = {
     "Blimp": "blimp",
     "BalanceBot": "ardurover",
     "Sailboat": "ardurover",
-    "SITLPeriphGPS": "sitl_periph_gp.AP_Periph",
+    "SITLPeriphUniversal": "sitl_periph_universal.AP_Periph",
     "CAN": "arducopter",
 }
 
@@ -360,8 +362,8 @@ tester_class_map = {
 }
 
 supplementary_test_binary_map = {
-    "test.CAN": ["sitl_periph_gps:AP_Periph:0:Tools/autotest/default_params/periph.parm,Tools/autotest/default_params/quad-periph.parm", # noqa: E501
-                 "sitl_periph_gps:AP_Periph:1:Tools/autotest/default_params/periph.parm"],
+    "test.CAN": ["sitl_periph_universal:AP_Periph:0:Tools/autotest/default_params/periph.parm,Tools/autotest/default_params/quad-periph.parm", # noqa: E501
+                 "sitl_periph_universal:AP_Periph:1:Tools/autotest/default_params/periph.parm"],
 }
 
 
@@ -382,7 +384,7 @@ def run_specific_test(step, *args, **kwargs):
             a = Test(a)
         print("Got %s" % (a.name))
         if a.name == test:
-            return (tester.autotest(tests=[a], allow_skips=False), tester)
+            return tester.autotest(tests=[a], allow_skips=False, step_name=step), tester
     print("Failed to find test %s on %s" % (test, testname))
     sys.exit(1)
 
@@ -439,8 +441,8 @@ def run_step(step):
     if step == 'build.Sub':
         vehicle_binary = 'bin/ardusub'
 
-    if step == 'build.SITLPeriphGPS':
-        vehicle_binary = 'sitl_periph_gps.bin/AP_Periph'
+    if step == 'build.SITLPeriphUniversal':
+        vehicle_binary = 'sitl_periph_universal.bin/AP_Periph'
 
     if step == 'build.Replay':
         return util.build_replay(board='SITL')
@@ -506,6 +508,7 @@ def run_step(step):
         "sup_binaries": supplementary_binaries,
         "reset_after_every_test": opts.reset_after_every_test,
         "build_opts": copy.copy(build_opts),
+        "generate_junit": opts.junit,
     }
     if opts.speedup is not None:
         fly_opts["speedup"] = opts.speedup
@@ -516,7 +519,7 @@ def run_step(step):
         global tester
         tester = tester_class_map[step](binary, **fly_opts)
         # run the test and return its result and the tester itself
-        return (tester.autotest(), tester)
+        return tester.autotest(None, step_name=step), tester
 
     # handle "test.Copter.CPUFailsafe" etc:
     specific_test_to_run = find_specific_test_to_run(step)
@@ -578,11 +581,7 @@ class TestResults(object):
     def __init__(self):
         """Init test results class."""
         self.date = time.asctime()
-        self.githash = util.run_cmd('git rev-parse HEAD',
-                                    output=True,
-                                    directory=util.reltopdir('.')).strip()
-        if sys.version_info.major >= 3:
-            self.githash = self.githash.decode('utf-8')
+        self.githash = util.get_git_hash()
         self.tests = []
         self.files = []
         self.images = []
@@ -884,6 +883,10 @@ if __name__ == "__main__":
                       action='store_true',
                       default=False,
                       help='configure with --Werror')
+    parser.add_option("--junit",
+                      default=False,
+                      action='store_true',
+                      help='Generate Junit XML tests report')
 
     group_build = optparse.OptionGroup(parser, "Build options")
     group_build.add_option("--no-configure",
@@ -1082,7 +1085,7 @@ if __name__ == "__main__":
         'build.Blimp',
         'test.Blimp',
 
-        'build.SITLPeriphGPS',
+        'build.SITLPeriphUniversal',
         'test.CAN',
 
         # convertgps disabled as it takes 5 hours

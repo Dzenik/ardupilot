@@ -99,7 +99,9 @@ bool ModeSystemId::init(bool ignore_checks)
 
     gcs().send_text(MAV_SEVERITY_INFO, "SystemID Starting: axis=%d", (unsigned)axis);
 
+#if HAL_LOGGING_ENABLED
     copter.Log_Write_SysID_Setup(axis, waveform_magnitude, frequency_start, frequency_stop, time_fade_in, time_const_freq, time_record, time_fade_out);
+#endif
 
     return true;
 }
@@ -107,7 +109,7 @@ bool ModeSystemId::init(bool ignore_checks)
 // systemId_exit - clean up systemId controller before exiting
 void ModeSystemId::exit()
 {
-    // reset the feedfoward enabled parameter to the initialized state
+    // reset the feedforward enabled parameter to the initialized state
     attitude_control->bf_feedforward(att_bf_feedforward);
 }
 

@@ -85,7 +85,7 @@
 #include <AP_Follow/AP_Follow.h>
 #include <AP_ExternalControl/AP_ExternalControl_config.h>
 #if AP_EXTERNAL_CONTROL_ENABLED
-#include <AP_ExternalControl/AP_ExternalControl.h>
+#include "AP_ExternalControl_Plane.h"
 #endif
 
 #include "GCS_Mavlink.h"
@@ -167,6 +167,10 @@ public:
     friend class ModeThermal;
     friend class ModeLoiterAltQLand;
 
+#if AP_EXTERNAL_CONTROL_ENABLED
+    friend class AP_ExternalControl_Plane;
+#endif
+
     Plane(void);
 
 private:
@@ -189,7 +193,9 @@ private:
     RC_Channel *channel_flap;
     RC_Channel *channel_airbrake;
 
+#if HAL_LOGGING_ENABLED
     AP_Logger logger;
+#endif
 
     // scaled roll limit based on pitch
     int32_t roll_limit_cd;
@@ -246,7 +252,7 @@ private:
 #endif
 
 #if HAL_RALLY_ENABLED
-    // Rally Ponints
+    // Rally Points
     AP_Rally rally;
 #endif
 
@@ -312,7 +318,7 @@ private:
 
     // Failsafe
     struct {
-        // Used to track if the value on channel 3 (throtttle) has fallen below the failsafe threshold
+        // Used to track if the value on channel 3 (throttle) has fallen below the failsafe threshold
         // RC receiver should be set up to output a low throttle value when signal is lost
         bool rc_failsafe;
 
@@ -494,11 +500,6 @@ private:
         // have we checked for an auto-land?
         bool checked_for_autoland;
 
-        // Altitude threshold to complete a takeoff command in autonomous modes.  Centimeters
-        // are we in idle mode? used for balloon launch to stop servo
-        // movement until altitude is reached
-        bool idle_mode;
-
         // are we in VTOL mode in AUTO?
         bool vtol_mode;
 
@@ -591,10 +592,12 @@ private:
     // this controls throttle suppression in auto modes
     bool throttle_suppressed;
 
+#if AP_BATTERY_WATT_MAX_ENABLED
     // reduce throttle to eliminate battery over-current
     int8_t  throttle_watt_limit_max;
     int8_t  throttle_watt_limit_min; // for reverse thrust
     uint32_t throttle_watt_limit_timer_ms;
+#endif
 
     AP_FixedWing::FlightStage flight_stage = AP_FixedWing::FlightStage::NORMAL;
 
@@ -618,7 +621,7 @@ private:
     // The instantaneous desired pitch angle.  Hundredths of a degree
     int32_t nav_pitch_cd;
 
-    // the aerodymamic load factor. This is calculated from the demanded
+    // the aerodynamic load factor. This is calculated from the demanded
     // roll before the roll is clipped, using 1/sqrt(cos(nav_roll))
     float aerodynamic_load_factor = 1.0f;
 
@@ -735,6 +738,9 @@ private:
         // are we trying to follow terrain?
         bool terrain_following;
 
+        // are we waiting to load terrain data to init terrain following
+        bool terrain_following_pending;
+
         // target altitude above terrain in cm, valid if terrain_following
         // is set
         int32_t terrain_alt_cm;
@@ -771,14 +777,14 @@ private:
     AP_Mount camera_mount;
 #endif
 
-    // Arming/Disarming mangement class
+    // Arming/Disarming management class
     AP_Arming_Plane arming;
 
     AP_Param param_loader {var_info};
 
-    // dummy implementation of external control
+    // external control library
 #if AP_EXTERNAL_CONTROL_ENABLED
-    AP_ExternalControl external_control;
+    AP_ExternalControl_Plane external_control;
 #endif
 
     static const AP_Scheduler::Task scheduler_tasks[];
@@ -855,7 +861,7 @@ private:
     void reset_offset_altitude(void);
     void set_offset_altitude_location(const Location &start_loc, const Location &destination_loc);
     bool above_location_current(const Location &loc);
-    void setup_terrain_target_alt(Location &loc) const;
+    void setup_terrain_target_alt(Location &loc);
     int32_t adjusted_altitude_cm(void);
     int32_t adjusted_relative_altitude_cm(void);
     float mission_alt_offset(void);
@@ -927,7 +933,6 @@ private:
     void do_loiter_unlimited(const AP_Mission::Mission_Command& cmd);
     void do_loiter_turns(const AP_Mission::Mission_Command& cmd);
     void do_loiter_time(const AP_Mission::Mission_Command& cmd);
-    void do_altitude_wait(const AP_Mission::Mission_Command& cmd);
     void do_continue_and_change_alt(const AP_Mission::Mission_Command& cmd);
     void do_loiter_to_alt(const AP_Mission::Mission_Command& cmd);
     void do_vtol_takeoff(const AP_Mission::Mission_Command& cmd);
@@ -1092,7 +1097,9 @@ private:
     // servos.cpp
     void set_servos_idle(void);
     void set_servos();
-    void set_servos_controlled(void);
+    float apply_throttle_limits(float throttle_in);
+    void set_throttle(void);
+    void set_takeoff_expected(void);
     void set_servos_old_elevons(void);
     void set_servos_flaps(void);
     void set_landing_gear(void);
@@ -1103,7 +1110,6 @@ private:
     void servos_auto_trim(void);
     void servos_twin_engine_mix();
     void force_flare();
-    void throttle_voltage_comp(int8_t &min_throttle, int8_t &max_throttle) const;
     void throttle_watt_limiter(int8_t &min_throttle, int8_t &max_throttle);
     void throttle_slew_limit(SRV_Channel::Aux_servo_function_t func);
     bool suppress_throttle(void);
@@ -1241,8 +1247,10 @@ public:
     void failsafe_check(void);
     bool is_landing() const override;
     bool is_taking_off() const override;
-#if AP_SCRIPTING_ENABLED
+#if AP_SCRIPTING_ENABLED || AP_EXTERNAL_CONTROL_ENABLED
     bool set_target_location(const Location& target_loc) override;
+#endif //AP_SCRIPTING_ENABLED || AP_EXTERNAL_CONTROL_ENABLED
+#if AP_SCRIPTING_ENABLED
     bool get_target_location(Location& target_loc) override;
     bool update_target_location(const Location &old_loc, const Location &new_loc) override;
     bool set_velocity_match(const Vector2f &velocity) override;

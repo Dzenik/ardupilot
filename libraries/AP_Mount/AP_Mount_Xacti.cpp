@@ -110,6 +110,9 @@ void AP_Mount_Xacti::update()
         return;
     }
 
+    // change to RC_TARGETING mode if RC input has changed
+    set_rctargeting_on_rcinput_change();
+
     // update based on mount mode
     switch (get_mode()) {
         // move mount to a "retracted" position.  To-Do: remove support and replace with a relaxed mode?
@@ -376,7 +379,7 @@ void AP_Mount_Xacti::send_target_rates(float pitch_rads, float yaw_rads, bool ya
 void AP_Mount_Xacti::send_target_angles(float pitch_rad, float yaw_rad, bool yaw_is_ef)
 {
     // convert yaw to body frame
-    const float yaw_bf_rad = yaw_is_ef ? wrap_PI(yaw_rad - AP::ahrs().yaw) : yaw_rad;
+    const float yaw_bf_rad = yaw_is_ef ? wrap_PI(yaw_rad - AP::ahrs().get_yaw()) : yaw_rad;
 
     // send angle target to gimbal
     send_gimbal_control(2, degrees(pitch_rad) * 100, degrees(yaw_bf_rad) * 100);
@@ -502,9 +505,14 @@ void AP_Mount_Xacti::handle_gnss_status_req(AP_DroneCAN* ap_dronecan, const Cana
     // get date and time
     uint16_t year, ms;
     uint8_t month, day, hour, min, sec;
+#if AP_RTC_ENABLED
     if (!AP::rtc().get_date_and_time_utc(year, month, day, hour, min, sec, ms)) {
         year = month = day = hour = min = sec = 0;
     }
+#else
+    year = month = day = hour = min = sec = 0;
+    (void)ms;
+#endif
 
     // send xacti specific gnss status message
     com_xacti_GnssStatus xacti_gnss_status_msg {};
@@ -938,9 +946,14 @@ bool AP_Mount_Xacti::set_datetime(uint32_t now_ms)
     // get date and time
     uint16_t year, ms;
     uint8_t month, day, hour, min, sec;
+#if AP_RTC_ENABLED
     if (!AP::rtc().get_date_and_time_utc(year, month, day, hour, min, sec, ms)) {
         return false;
     }
+#else
+    (void)ms;
+    return false;
+#endif
 
     // date time is of the format YYYYMMDDHHMMSS (14 bytes)
     // convert month from 0~11 to 1~12 range

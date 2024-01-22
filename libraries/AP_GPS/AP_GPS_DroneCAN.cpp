@@ -526,10 +526,12 @@ void AP_GPS_DroneCAN::handle_status_msg(const ardupilot_gnss_Status& msg)
     healthy = msg.healthy;
     status_flags = msg.status;
     if (error_code != msg.error_codes) {
+#if HAL_LOGGING_ENABLED
         AP::logger().Write_MessageF("GPS %d: error changed (0x%08x/0x%08x)",
                                     (unsigned int)(state.instance + 1),
                                     error_code,
                                     msg.error_codes);
+#endif
         error_code = msg.error_codes;
     }
 }
@@ -800,7 +802,7 @@ void AP_GPS_DroneCAN::inject_data(const uint8_t *data, uint16_t len)
 {
     // we only handle this if we are the first DroneCAN GPS or we are
     // using a different uavcan instance than the first GPS, as we
-    // send the data as broadcast on all DroneCAN devive ports and we
+    // send the data as broadcast on all DroneCAN device ports and we
     // don't want to send duplicates
     const uint32_t now_ms = AP_HAL::millis();
     if (_detected_module == 0 ||

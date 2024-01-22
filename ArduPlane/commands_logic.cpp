@@ -8,10 +8,16 @@ bool Plane::start_command(const AP_Mission::Mission_Command& cmd)
     // default to non-VTOL loiter
     auto_state.vtol_loiter = false;
 
-        // log when new commands start
+#if AP_TERRAIN_AVAILABLE
+    plane.target_altitude.terrain_following_pending = false;
+#endif
+
+#if HAL_LOGGING_ENABLED
+    // log when new commands start
     if (should_log(MASK_LOG_CMD)) {
         logger.Write_Mission_Cmd(mission, cmd);
     }
+#endif
 
     // special handling for nav vs non-nav commands
     if (AP_Mission::is_nav_cmd(cmd)) {
@@ -19,9 +25,6 @@ bool Plane::start_command(const AP_Mission::Mission_Command& cmd)
         // except in a takeoff
         auto_state.takeoff_complete = true;
 
-        // start non-idle
-        auto_state.idle_mode = false;
-        
         nav_controller->set_data_is_stale();
 
         // reset loiter start time. New command is a new loiter
@@ -89,7 +92,6 @@ bool Plane::start_command(const AP_Mission::Mission_Command& cmd)
         break;
 
     case MAV_CMD_NAV_ALTITUDE_WAIT:
-        do_altitude_wait(cmd);
         break;
 
 #if HAL_QUADPLANE_ENABLED
@@ -195,7 +197,8 @@ bool Plane::start_command(const AP_Mission::Mission_Command& cmd)
     case MAV_CMD_DO_ENGINE_CONTROL:
         plane.g2.ice_control.engine_control(cmd.content.do_engine_control.start_control,
                                             cmd.content.do_engine_control.cold_start,
-                                            cmd.content.do_engine_control.height_delay_cm*0.01f);
+                                            cmd.content.do_engine_control.height_delay_cm*0.01f,
+                                            cmd.content.do_engine_control.allow_disarmed_start);
         break;
 #endif
 
@@ -347,6 +350,7 @@ void Plane::do_RTL(int32_t rtl_altitude_AMSL_cm)
     next_WP_loc = calc_best_rally_or_home_location(current_loc, rtl_altitude_AMSL_cm);
     setup_terrain_target_alt(next_WP_loc);
     set_target_altitude_location(next_WP_loc);
+    plane.altitude_error_cm = calc_altitude_error_cm();
 
     if (aparm.loiter_radius < 0) {
         loiter.direction = -1;
@@ -357,7 +361,9 @@ void Plane::do_RTL(int32_t rtl_altitude_AMSL_cm)
     setup_glide_slope();
     setup_turn_angle();
 
+#if HAL_LOGGING_ENABLED
     logger.Write_Mode(control_mode->mode_number(), control_mode_reason);
+#endif
 }
 
 Location Plane::calc_best_rally_or_home_location(const Location &_current_loc, float rtl_home_alt_amsl_cm) const
@@ -514,12 +520,6 @@ void Plane::do_continue_and_change_alt(const AP_Mission::Mission_Command& cmd)
     reset_offset_altitude();
 }
 
-void Plane::do_altitude_wait(const AP_Mission::Mission_Command& cmd)
-{
-    // set all servos to trim until we reach altitude or descent speed
-    auto_state.idle_mode = true;
-}
-
 void Plane::do_loiter_to_alt(const AP_Mission::Mission_Command& cmd)
 {
     //set target alt  
@@ -542,7 +542,11 @@ void ModeAuto::do_nav_delay(const AP_Mission::Mission_Command& cmd)
         nav_delay.time_max_ms = cmd.content.nav_delay.seconds * 1000; // convert seconds to milliseconds
     } else {
         // absolute delay to utc time
+#if AP_RTC_ENABLED
         nav_delay.time_max_ms = AP::rtc().get_time_utc(cmd.content.nav_delay.hour_utc, cmd.content.nav_delay.min_utc, cmd.content.nav_delay.sec_utc, 0);
+#else
+        nav_delay.time_max_ms = 0;
+#endif
     }
     gcs().send_text(MAV_SEVERITY_INFO, "Delaying %u sec", (unsigned)(nav_delay.time_max_ms/1000));
 }
@@ -1090,7 +1094,7 @@ bool Plane::verify_landing_vtol_approach(const AP_Mission::Mission_Command &cmd)
                 const float breakout_direction_rad = radians(vtol_approach_s.approach_direction_deg + (direction > 0 ? 270 : 90));
 
                 // breakout when within 5 degrees of the opposite direction
-                if (fabsF(wrap_PI(ahrs.yaw - breakout_direction_rad)) < radians(5.0f)) {
+                if (fabsF(wrap_PI(ahrs.get_yaw() - breakout_direction_rad)) < radians(5.0f)) {
                     gcs().send_text(MAV_SEVERITY_INFO, "Starting VTOL land approach path");
                     vtol_approach_s.approach_stage = APPROACH_LINE;
                     set_next_WP(cmd.content.location);
