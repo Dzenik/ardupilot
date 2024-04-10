@@ -3230,7 +3230,7 @@ MAV_RESULT GCS_MAVLINK::handle_preflight_reboot(const mavlink_command_int_t &pac
         }
         if (is_equal(packet.param4, 94.0f)) {
             // the following text is unlikely to make it out...
-            send_text(MAV_SEVERITY_WARNING,"deferencing a bad thing");
+            send_text(MAV_SEVERITY_WARNING,"dereferencing a bad thing");
 
 #if CONFIG_HAL_BOARD != HAL_BOARD_ESP32
 // esp32 can't do this bit, skip it, return an error
@@ -3585,10 +3585,6 @@ void GCS_MAVLINK::set_ekf_origin(const Location& loc)
     if (!ahrs.set_origin(loc)) {
         return;
     }
-
-#if HAL_LOGGING_ENABLED
-    ahrs.Log_Write_Home_And_Origin();
-#endif
 
     // send ekf origin to GCS
     if (!try_send_message(MSG_ORIGIN)) {
@@ -5060,6 +5056,23 @@ void GCS_MAVLINK::handle_landing_target(const mavlink_message_t &msg)
     handle_landing_target(m, corrected_ms);
 }
 
+
+bool GCS_MAVLINK::set_home_to_current_location(bool _lock)
+{
+#if AP_VEHICLE_ENABLED
+    return AP::vehicle()->set_home_to_current_location(_lock);
+#else
+    return false;
+#endif
+}
+
+bool GCS_MAVLINK::set_home(const Location& loc, bool _lock) {
+#if AP_VEHICLE_ENABLED
+    return AP::vehicle()->set_home(loc, _lock);
+#else
+    return false;
+#endif
+}
 
 MAV_RESULT GCS_MAVLINK::handle_command_do_set_home(const mavlink_command_int_t &packet)
 {
