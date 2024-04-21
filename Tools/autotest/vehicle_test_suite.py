@@ -3995,7 +3995,11 @@ class TestSuite(ABC):
                 seq += 1
                 ret.append(item)
                 continue
-            (t, n, e, alt) = item
+            opts = {}
+            try:
+                (t, n, e, alt, opts) = item
+            except ValueError:
+                (t, n, e, alt) = item
             lat = 0
             lng = 0
             if n != 0 or e != 0:
@@ -4005,6 +4009,8 @@ class TestSuite(ABC):
             frame = mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT
             if not self.ardupilot_stores_frame_for_cmd(t):
                 frame = mavutil.mavlink.MAV_FRAME_GLOBAL
+            if opts.get('frame', None) is not None:
+                frame = opts.get('frame')
             ret.append(self.create_MISSION_ITEM_INT(t, seq=seq, frame=frame, x=int(lat*1e7), y=int(lng*1e7), z=alt))
             seq += 1
 
@@ -8993,6 +8999,15 @@ Also, ignores heartbeats not from our target system'''
             self.progress("GroundSpeed OK (got=%f) (want=%f)" %
                           (m.groundspeed, want))
 
+    def set_home(self, loc):
+        '''set home to supplied loc'''
+        self.run_cmd_int(
+            mavutil.mavlink.MAV_CMD_DO_SET_HOME,
+            p5=int(loc.lat*1e7),
+            p6=int(loc.lng*1e7),
+            p7=loc.alt,
+        )
+
     def SetHome(self):
         '''Setting and fetching of home'''
         if self.is_tracker():
@@ -13667,7 +13682,7 @@ switch value'''
             n = self.poll_home_position(timeout=120)
             distance = self.get_distance_int(orig, n)
             if distance > 1:
-                raise NotAchievedException("gps type %u misbehaving" % name)
+                raise NotAchievedException(f"gps type {name} misbehaving")
 
     def assert_gps_satellite_count(self, messagename, count):
         m = self.assert_receive_message(messagename)

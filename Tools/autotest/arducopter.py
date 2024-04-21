@@ -2055,6 +2055,67 @@ class AutoTestCopter(vehicle_test_suite.TestSuite):
 
         self.do_RTL()
 
+    def CompassMot(self):
+        '''test code that adjust mag field for motor interference'''
+        self.run_cmd(
+            mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION,
+            0,  # p1
+            0,  # p2
+            0,  # p3
+            0,  # p4
+            0,  # p5
+            1,  # p6
+            0  # p7
+        )
+        self.context_collect("STATUSTEXT")
+        self.wait_statustext("Starting calibration", check_context=True)
+        self.wait_statustext("Current", check_context=True)
+        rc3_min = self.get_parameter('RC3_MIN')
+        rc3_max = self.get_parameter('RC3_MAX')
+        rc3_dz = self.get_parameter('RC3_DZ')
+
+        def set_rc3_for_throttle_pct(thr_pct):
+            value = int((rc3_min+rc3_dz) + (thr_pct/100.0) * (rc3_max-(rc3_min+rc3_dz)))
+            self.progress("Setting rc3 to %u" % value)
+            self.set_rc(3, value)
+
+        throttle_in_pct = 0
+        set_rc3_for_throttle_pct(throttle_in_pct)
+        self.assert_received_message_field_values("COMPASSMOT_STATUS", {
+            "interference": 0,
+            "throttle": throttle_in_pct
+        }, verbose=True, very_verbose=True)
+        tstart = self.get_sim_time()
+        delta = 5
+        while True:
+            if self.get_sim_time_cached() - tstart > 60:
+                raise NotAchievedException("did not run through entire range")
+            throttle_in_pct += delta
+            self.progress("Using throttle %f%%" % throttle_in_pct)
+            set_rc3_for_throttle_pct(throttle_in_pct)
+            self.wait_message_field_values("COMPASSMOT_STATUS", {
+                "throttle": throttle_in_pct * 10.0,
+            }, verbose=True, very_verbose=True, epsilon=1)
+            if throttle_in_pct == 0:
+                # finished counting down
+                break
+            if throttle_in_pct == 100:
+                # start counting down
+                delta = -delta
+
+        m = self.wait_message_field_values("COMPASSMOT_STATUS", {
+            "throttle": 0,
+        }, verbose=True)
+        for axis in "X", "Y", "Z":
+            fieldname = "Compensation" + axis
+            if getattr(m, fieldname) <= 0:
+                raise NotAchievedException("Expected non-zero %s" % fieldname)
+
+        # it's kind of crap - but any command-ack will stop the
+        # calibration
+        self.mav.mav.command_ack_send(0, 1)
+        self.wait_statustext("Calibration successful")
+
     def MagFail(self):
         '''test failover of compass in EKF'''
         # we want both EK2 and EK3
@@ -6986,56 +7047,38 @@ class AutoTestCopter(vehicle_test_suite.TestSuite):
         """ensure vehicle stays put until it is ready to fly"""
         self.context_push()
 
-        ex = None
-        try:
-            self.set_parameter("PILOT_TKOFF_ALT", 700)
-            self.change_mode('POSHOLD')
-            self.set_rc(3, 1000)
-            self.wait_ready_to_arm()
-            self.arm_vehicle()
-            self.delay_sim_time(2)
-            # check we are still on the ground...
-            m = self.mav.recv_match(type='GLOBAL_POSITION_INT', blocking=True)
-            if abs(m.relative_alt) > 100:
-                raise NotAchievedException("Took off prematurely")
+        self.set_parameter("PILOT_TKOFF_ALT", 700)
+        self.change_mode('POSHOLD')
+        self.set_rc(3, 1000)
+        self.wait_ready_to_arm()
+        self.arm_vehicle()
+        self.delay_sim_time(2)
+        # check we are still on the ground...
+        relative_alt = self.get_altitude(relative=True)
+        if relative_alt > 0.1:
+            raise NotAchievedException("Took off prematurely")
 
-            self.progress("Pushing throttle up")
-            self.set_rc(3, 1710)
-            self.delay_sim_time(0.5)
-            self.progress("Bringing back to hover throttle")
-            self.set_rc(3, 1500)
+        self.progress("Pushing throttle up")
+        self.set_rc(3, 1710)
+        self.delay_sim_time(0.5)
+        self.progress("Bringing back to hover throttle")
+        self.set_rc(3, 1500)
 
-            # make sure we haven't already reached alt:
-            m = self.mav.recv_match(type='GLOBAL_POSITION_INT', blocking=True)
-            max_initial_alt = 2000
-            if abs(m.relative_alt) > max_initial_alt:
-                raise NotAchievedException("Took off too fast (%f > %f" %
-                                           (abs(m.relative_alt), max_initial_alt))
+        # make sure we haven't already reached alt:
+        relative_alt = self.get_altitude(relative=True)
+        max_initial_alt = 2.0
+        if abs(relative_alt) > max_initial_alt:
+            raise NotAchievedException("Took off too fast (%f > %f" %
+                                       (relative_alt, max_initial_alt))
 
-            self.progress("Monitoring takeoff-to-alt")
-            self.wait_altitude(6.9, 8, relative=True)
-
-            self.progress("Making sure we stop at our takeoff altitude")
-            tstart = self.get_sim_time()
-            while self.get_sim_time() - tstart < 5:
-                m = self.mav.recv_match(type='GLOBAL_POSITION_INT', blocking=True)
-                delta = abs(7000 - m.relative_alt)
-                self.progress("alt=%f delta=%f" % (m.relative_alt/1000,
-                                                   delta/1000))
-                if delta > 1000:
-                    raise NotAchievedException("Failed to maintain takeoff alt")
-            self.progress("takeoff OK")
-        except Exception as e:
-            self.print_exception_caught(e)
-            ex = e
+        self.progress("Monitoring takeoff-to-alt")
+        self.wait_altitude(6.9, 8, relative=True, minimum_duration=10)
+        self.progress("takeoff OK")
 
         self.land_and_disarm()
         self.set_rc(8, 1000)
 
         self.context_pop()
-
-        if ex is not None:
-            raise ex
 
     def initial_mode(self):
         return "STABILIZE"
@@ -7591,7 +7634,8 @@ class AutoTestCopter(vehicle_test_suite.TestSuite):
         ex = None
         try:
             self.customise_SITL_commandline(
-                ["--defaults", ','.join(self.model_defaults_filepath('Callisto'))],
+                [],
+                defaults_filepath=self.model_defaults_filepath('Callisto'),
                 model="octa-quad:@ROMFS/models/Callisto.json",
                 wipe=True,
             )
@@ -8786,7 +8830,8 @@ class AutoTestCopter(vehicle_test_suite.TestSuite):
     def Callisto(self):
         '''Test Callisto'''
         self.customise_SITL_commandline(
-            ["--defaults", ','.join(self.model_defaults_filepath('Callisto')), ],
+            [],
+            defaults_filepath=self.model_defaults_filepath('Callisto'),
             model="octa-quad:@ROMFS/models/Callisto.json",
             wipe=True,
         )
@@ -8820,12 +8865,12 @@ class AutoTestCopter(vehicle_test_suite.TestSuite):
             # the model string for Callisto has crap in it.... we
             # should really have another entry in the vehicleinfo data
             # to carry the path to the JSON.
-            actual_model = model.split(":")[0]
-            defaults = self.model_defaults_filepath(actual_model)
+            defaults = self.model_defaults_filepath(frame)
             if not isinstance(defaults, list):
                 defaults = [defaults]
             self.customise_SITL_commandline(
-                ["--defaults", ','.join(defaults), ],
+                [],
+                defaults_filepath=defaults,
                 model=model,
                 wipe=True,
             )
@@ -10828,6 +10873,42 @@ class AutoTestCopter(vehicle_test_suite.TestSuite):
             if abs(got - want) > 1:
                 raise NotAchievedException(f"Incorrect relalt {want=} {got=}")
 
+    def LoiterToGuidedHomeVSOrigin(self):
+        '''test moving from guided to loiter mode when home is a different alt
+        to origin'''
+        self.set_parameters({
+            "TERRAIN_ENABLE": 1,
+            "SIM_TERRAIN": 1,
+        })
+        self.takeoff(10, mode='GUIDED')
+        here = self.mav.location()
+        self.set_home(here)
+        self.change_mode('LOITER')
+        self.wait_altitude(here.alt-1, here.alt+1, minimum_duration=10)
+        self.disarm_vehicle(force=True)
+        self.reboot_sitl()  # to "unstick" home
+
+    def GuidedModeThrust(self):
+        '''test handling of option-bit-3, where mavlink commands are
+        intrepreted as thrust not climb rate'''
+        self.set_parameter('GUID_OPTIONS', 8)
+        self.change_mode('GUIDED')
+        self.wait_ready_to_arm()
+        self.arm_vehicle()
+        self.mav.mav.set_attitude_target_send(
+            0, # time_boot_ms
+            1, # target sysid
+            1, # target compid
+            0, # bitmask of things to ignore
+            mavextra.euler_to_quat([0, 0, 0]), # att
+            0, # roll rate  (rad/s)
+            0, # pitch rate (rad/s)
+            0, # yaw rate   (rad/s)
+            0.5
+        ) # thrust, 0 to 1
+        self.wait_altitude(0.5, 100, relative=True, timeout=10)
+        self.do_RTL()
+
     def tests2b(self):  # this block currently around 9.5mins here
         '''return list of all tests'''
         ret = ([
@@ -10906,6 +10987,9 @@ class AutoTestCopter(vehicle_test_suite.TestSuite):
             self.PILOT_THR_BHV,
             self.GPSForYawCompassLearn,
             self.CameraLogMessages,
+            self.LoiterToGuidedHomeVSOrigin,
+            self.GuidedModeThrust,
+            self.CompassMot,
         ])
         return ret
 
@@ -10936,6 +11020,8 @@ class AutoTestCopter(vehicle_test_suite.TestSuite):
             "GroundEffectCompensation_touchDownExpected": "Flapping",
             "FlyMissionTwice": "See https://github.com/ArduPilot/ardupilot/pull/18561",
             "GPSForYawCompassLearn": "Vehicle currently crashed in spectacular fashion",
+            "GuidedModeThrust": "land detector raises internal error as we're not saying we're about to take off but just did",
+            "CompassMot": "Cuases an arithmetic exception in the EKF",
         }
 
 
