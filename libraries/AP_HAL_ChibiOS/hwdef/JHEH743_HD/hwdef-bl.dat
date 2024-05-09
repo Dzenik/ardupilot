@@ -16,7 +16,6 @@ FLASH_RESERVE_START_KB 0
 # the H743 has 128k sectors
 FLASH_BOOTLOADER_LOAD_KB 128
 
-
 # order of UARTs (and USB). Allow bootloading on USB and telem1
 SERIAL_ORDER OTG1 UART7
 
@@ -24,11 +23,14 @@ SERIAL_ORDER OTG1 UART7
 PE7 UART7_RX UART7 NODMA
 PE8 UART7_TX UART7 NODMA
 
-# PA10 IO-debug-console
+# Now we define the pins that USB is connected on.
 PA11 OTG_FS_DM OTG1
 PA12 OTG_FS_DP OTG1
+
+# OTG USB VBUS
 PE6 VBUS INPUT
 
+# These are the pins for SWD debugging with a STlinkv2 or black-magic probe.
 PA13 JTMS-SWDIO SWD
 PA14 JTCK-SWCLK SWD
 
@@ -39,6 +41,9 @@ PC5  PINIO2 OUTPUT LOW
 PE5 LED_BOOTLOADER OUTPUT LOW
 PE4 LED_ACTIVITY OUTPUT LOW
 define HAL_LED_ON 0
+
+# default to all pins low to avoid ESD issues
+DEFAULTGPIO OUTPUT LOW PULLDOWN
 
 # Add CS pins to ensure they are high in bootloader
 PB12 MAX7456_CS CS
