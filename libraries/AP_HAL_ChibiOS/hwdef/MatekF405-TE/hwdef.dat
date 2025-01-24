@@ -170,7 +170,7 @@ define HAL_DEFAULT_AIRSPEED_PIN 10
 # save some flash
 include ../include/minimize_fpv_osd.inc
 include ../include/no_bootloader_DFU.inc
-include ../include/minimal_GPS.inc
+#include ../include/minimal_GPS.inc
 
 define AP_AIRSPEED_ASP5033_ENABLED 1
 
