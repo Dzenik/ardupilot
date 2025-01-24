@@ -12,7 +12,7 @@ PA15  TIM2_CH1  TIM2 PWM(5) GPIO(54)
 PA6   TIM16_CH1 TIM16 GPIO(32) ALARM
 
 # ----------------------- GPS ----------------------------
-define HAL_PERIPH_ENABLE_GPS
+define AP_PERIPH_GPS_ENABLED 1
 define GPS_MAX_RATE_MS 200
 
 define GPS_MAX_RECEIVERS 1
@@ -23,6 +23,10 @@ define HAL_PERIPH_GPS_PORT_DEFAULT 2
 # allow for F9P GPS modules with moving baseline
 define GPS_MOVING_BASELINE 1
 
+# restrict backends available to save flash (i.e. only UBLOX)
+define AP_GPS_NOVA_ENABLED 0
+define AP_GPS_SBF_ENABLED 0
+define AP_GPS_GSOF_ENABLED 0
 
 # ---------------------- COMPASS ---------------------------
 define HAL_PERIPH_ENABLE_MAG

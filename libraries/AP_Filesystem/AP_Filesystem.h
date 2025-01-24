@@ -38,6 +38,9 @@
 #if AP_FILESYSTEM_FATFS_ENABLED
 #include "AP_Filesystem_FATFS.h"
 #endif
+#if AP_FILESYSTEM_LITTLEFS_ENABLED
+#include "AP_Filesystem_FlashMemory_LittleFS.h"
+#endif
 
 struct dirent {
    char    d_name[MAX_NAME_LEN]; /* filename */
@@ -54,8 +57,11 @@ struct dirent {
 #define AP_FILESYSTEM_FORMAT_ENABLED 1
 #endif
 
-#if CONFIG_HAL_BOARD == HAL_BOARD_LINUX || CONFIG_HAL_BOARD == HAL_BOARD_SITL
+#if CONFIG_HAL_BOARD == HAL_BOARD_LINUX || CONFIG_HAL_BOARD == HAL_BOARD_SITL || CONFIG_HAL_BOARD == HAL_BOARD_QURT
 #include "AP_Filesystem_posix.h"
+#if AP_FILESYSTEM_LITTLEFS_ENABLED
+#include "AP_Filesystem_FlashMemory_LittleFS.h"
+#endif
 #endif
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_ESP32
