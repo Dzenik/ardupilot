@@ -47,7 +47,7 @@ typedef struct {
 #define MAX_FILES 16
 static FAT_FILE *file_table[MAX_FILES];
 
-static int isatty_(int fileno)
+static bool isatty_(int fileno)
 {
     if (fileno >= 0 && fileno <= 2) {
         return true;
@@ -254,7 +254,6 @@ static bool remount_file_system(void)
     }
     if (!sdcard_retry()) {
         remount_needed = true;
-        EXPECT_DELAY_MS(0);
         return false;
     }
     remount_needed = false;
@@ -278,7 +277,6 @@ static bool remount_file_system(void)
             f_lseek(fh, offset);
         }
     }
-    EXPECT_DELAY_MS(0);
     return true;
 }
 
