@@ -227,11 +227,11 @@ public:
     AP_NMEA_Output nmea;
 #endif
 
-#ifdef HAL_PERIPH_ENABLE_MAG
+#if AP_PERIPH_MAG_ENABLED
     Compass compass;
 #endif
 
-#ifdef HAL_PERIPH_ENABLE_BARO
+#if AP_PERIPH_BARO_ENABLED
     AP_Baro baro;
 #endif
 
@@ -249,7 +249,7 @@ public:
 #endif
 #endif // HAL_PERIPH_ENABLE_RPM
 
-#ifdef HAL_PERIPH_ENABLE_BATTERY
+#if AP_PERIPH_BATTERY_ENABLED
     void handle_battery_failsafe(const char* type_str, const int8_t action) { }
     AP_BattMonitor battery_lib{0, FUNCTOR_BIND_MEMBER(&AP_Periph_FW::handle_battery_failsafe, void, const char*, const int8_t), nullptr};
     struct {
@@ -379,7 +379,7 @@ public:
     Parameters_RCIN g_rcin;
 #endif
 
-#ifdef HAL_PERIPH_ENABLE_BATTERY_BALANCE
+#if AP_PERIPH_BATTERY_BALANCE_ENABLED
     void batt_balance_update();
     BattBalance battery_balance;
 #endif
@@ -449,7 +449,7 @@ public:
 #ifdef HAL_PERIPH_ENABLE_EFI
     uint32_t last_efi_update_ms;
 #endif
-#ifdef HAL_PERIPH_ENABLE_MAG
+#if AP_PERIPH_MAG_ENABLED
     uint32_t last_mag_update_ms;
 #endif
 #if AP_PERIPH_GPS_ENABLED
@@ -457,7 +457,7 @@ public:
     uint32_t last_gps_yaw_ms;
 #endif
     uint32_t last_relposheading_ms;
-#ifdef HAL_PERIPH_ENABLE_BARO
+#if AP_PERIPH_BARO_ENABLED
     uint32_t last_baro_update_ms;
 #endif
 #ifdef HAL_PERIPH_ENABLE_AIRSPEED

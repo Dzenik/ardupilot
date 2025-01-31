@@ -451,6 +451,8 @@ AP_Vehicle::custom_mode_state* Copter::register_custom_mode(const uint8_t num, c
             }
             if (mode_guided_custom[i] == nullptr) {
                 // Allocation failure
+                free((void*)full_name_copy);
+                free((void*)short_name_copy);
                 return nullptr;
             }
 
@@ -962,7 +964,6 @@ Copter::Copter(void)
     flight_modes(&g.flight_mode1),
     pos_variance_filt(FS_EKF_FILT_DEFAULT),
     vel_variance_filt(FS_EKF_FILT_DEFAULT),
-    hgt_variance_filt(FS_EKF_FILT_DEFAULT),
     flightmode(&mode_stabilize),
     simple_cos_yaw(1.0f),
     super_simple_cos_yaw(1.0),

@@ -349,13 +349,13 @@ void AP_Periph_FW::handle_param_executeopcode(CanardInstance* canard_instance, C
 #if AP_PERIPH_GPS_ENABLED
         AP_Param::setup_object_defaults(&gps, gps.var_info);
 #endif
-#ifdef HAL_PERIPH_ENABLE_BATTERY
+#if AP_PERIPH_BATTERY_ENABLED
         AP_Param::setup_object_defaults(&battery, battery_lib.var_info);
 #endif
-#ifdef HAL_PERIPH_ENABLE_MAG
+#if AP_PERIPH_MAG_ENABLED
         AP_Param::setup_object_defaults(&compass, compass.var_info);
 #endif
-#ifdef HAL_PERIPH_ENABLE_BARO
+#if AP_PERIPH_BARO_ENABLED
         AP_Param::setup_object_defaults(&baro, baro.var_info);
 #endif
 #ifdef HAL_PERIPH_ENABLE_AIRSPEED
@@ -1611,7 +1611,7 @@ void AP_Periph_FW::can_start()
         }
     }
     if (!has_uavcan_at_1MHz) {
-        g.can_protocol[0].set_and_save(uint8_t(AP_CAN::Protocol::DroneCAN));
+        g.can_protocol[0].set_and_save(AP_CAN::Protocol::DroneCAN);
         g.can_baudrate[0].set_and_save(1000000);
     }
 #endif // HAL_PERIPH_ENFORCE_AT_LEAST_ONE_PORT_IS_UAVCAN_1MHz
@@ -1882,7 +1882,7 @@ void AP_Periph_FW::can_update()
     if (!hal.run_in_maintenance_mode())
 #endif
     {
-#ifdef HAL_PERIPH_ENABLE_MAG
+#if AP_PERIPH_MAG_ENABLED
         can_mag_update();
 #endif
 #if AP_PERIPH_GPS_ENABLED
@@ -1891,10 +1891,10 @@ void AP_Periph_FW::can_update()
 #if AP_UART_MONITOR_ENABLED
         send_serial_monitor_data();
 #endif
-#ifdef HAL_PERIPH_ENABLE_BATTERY
+#if AP_PERIPH_BATTERY_ENABLED
         can_battery_update();
 #endif
-#ifdef HAL_PERIPH_ENABLE_BARO
+#if AP_PERIPH_BARO_ENABLED
         can_baro_update();
 #endif
 #ifdef HAL_PERIPH_ENABLE_AIRSPEED

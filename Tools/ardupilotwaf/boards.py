@@ -954,11 +954,12 @@ class sitl_periph_universal(sitl_periph):
 
             AP_PERIPH_GPS_ENABLED = 1,
             HAL_PERIPH_ENABLE_AIRSPEED = 1,
-            HAL_PERIPH_ENABLE_MAG = 1,
-            HAL_PERIPH_ENABLE_BARO = 1,
+            AP_PERIPH_MAG_ENABLED = 1,
+            AP_PERIPH_BARO_ENABLED = 1,
             HAL_PERIPH_ENABLE_IMU = 1,
             HAL_PERIPH_ENABLE_RANGEFINDER = 1,
-            HAL_PERIPH_ENABLE_BATTERY = 1,
+            AP_PERIPH_BATTERY_ENABLED = 1,
+            AP_PERIPH_BATTERY_BALANCE_ENABLED = 0,
             HAL_PERIPH_ENABLE_EFI = 1,
             HAL_PERIPH_ENABLE_RPM = 1,
             HAL_PERIPH_ENABLE_RPM_STREAM = 1,
@@ -997,7 +998,8 @@ class sitl_periph_battmon(sitl_periph):
             CAN_APP_NODE_NAME = '"org.ardupilot.ap_periph_battmon"',
             APJ_BOARD_ID = 101,
 
-            HAL_PERIPH_ENABLE_BATTERY = 1,
+            AP_PERIPH_BATTERY_ENABLED = 1,
+            AP_PERIPH_BATTERY_BALANCE_ENABLED = 0,
         )
 
 class esp32(Board):
@@ -1163,6 +1165,7 @@ class chibios(Board):
             '-fno-builtin-vprintf',
             '-fno-builtin-vfprintf',
             '-fno-builtin-puts',
+            '-fno-math-errno',
             '-mno-thumb-interwork',
             '-mthumb',
             '--specs=nano.specs',
