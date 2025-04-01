@@ -213,7 +213,7 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
     // @User: Advanced
     GSCALAR(serial_number, "BRD_SERIAL_NUM", 0),
 
-#ifdef HAL_PERIPH_ENABLE_BUZZER_WITHOUT_NOTIFY
+#if AP_PERIPH_BUZZER_WITHOUT_NOTIFY_ENABLED
     // @Param: BUZZER_VOLUME
     // @DisplayName: Buzzer volume
     // @Description: Control the volume of the buzzer
@@ -283,7 +283,7 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
     GSCALAR(baro_enable, "BARO_ENABLE", AP_PERIPH_BARO_ENABLE_DEFAULT),
 #endif
 
-#ifdef AP_PERIPH_HAVE_LED_WITHOUT_NOTIFY
+#if AP_PERIPH_HAVE_LED_WITHOUT_NOTIFY
     // @Param: LED_BRIGHTNESS
     // @DisplayName: LED Brightness
     // @Description: Select the RGB LED brightness level.
@@ -392,7 +392,7 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
     GSCALAR(hardpoint_rate, "HARDPOINT_RATE", 100),
 #endif
 
-#if AP_PERIPH_HOBBYWING_ESC_ENABLED || defined(HAL_PERIPH_ENABLE_ESC_APD)
+#if AP_PERIPH_HOBBYWING_ESC_ENABLED || AP_PERIPH_ESC_APD_ENABLED
     // @Param: ESC_NUMBER
     // @DisplayName: ESC number
     // @Description: This is the ESC number to report as in UAVCAN ESC telemetry feedback packets.
@@ -589,11 +589,11 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
     GOBJECT(kdecan, "KDE_",   AP_KDECAN),
 #endif
 
-#if defined(HAL_PERIPH_ENABLE_ESC_APD)
+#if AP_PERIPH_ESC_APD_ENABLED
     GARRAY(pole_count, 0, "ESC_NUM_POLES", 22),
 #endif
 
-#if defined(HAL_PERIPH_ENABLE_ESC_APD)
+#if AP_PERIPH_ESC_APD_ENABLED
     // @Param: ESC_APD_SERIAL_1
     // @DisplayName: ESC APD Serial 1
     // @Description: Which serial port to use for APD ESC data
@@ -683,7 +683,7 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
     GOBJECT(relay,                 "RELAY", AP_Relay),
 #endif
 
-#ifdef HAL_PERIPH_ENABLE_DEVICE_TEMPERATURE
+#if AP_PERIPH_DEVICE_TEMPERATURE_ENABLED
     // @Param: TEMP_MSG_RATE
     // @DisplayName: Temperature sensor message rate
     // @Description: This is the rate Temperature sensor data is sent in Hz. Zero means no send. Each sensor with source DroneCAN is sent in turn.
@@ -737,7 +737,13 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
     GOBJECT(imu, "INS", AP_InertialSensor),
 #endif
 
-    AP_VAREND
+#if AP_DAC_ENABLED
+    // @Group: DAC
+    // @Path: ../libraries/AP_DAC/AP_DAC.cpp
+    GOBJECT(dac, "DAC", AP_DAC),
+#endif
+
+AP_VAREND
 };
 
 

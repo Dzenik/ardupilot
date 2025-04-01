@@ -160,6 +160,10 @@ void AP_Periph_FW::init()
     }
 #endif  // AP_PERIPH_GPS_ENABLED
 
+#if AP_DAC_ENABLED
+    dac.init();
+#endif
+
 #if AP_PERIPH_MAG_ENABLED
     compass.init();
 #endif
@@ -273,7 +277,7 @@ void AP_Periph_FW::init()
     hwesc_telem.init(hal.serial(HAL_PERIPH_HWESC_SERIAL_PORT));
 #endif
 
-#ifdef HAL_PERIPH_ENABLE_ESC_APD
+#if AP_PERIPH_ESC_APD_ENABLED
     for (uint8_t i = 0; i < ESC_NUMBERS; i++) {
         const uint8_t port = g.esc_serial_port[i];
         if (port < SERIALMANAGER_NUM_PORTS) { // skip bad ports
@@ -454,6 +458,10 @@ void AP_Periph_FW::update()
 
 #if AP_PERIPH_RC_OUT_ENABLED
         rcout_init_1Hz();
+#endif
+
+#if AP_DAC_ENABLED
+        dac.update();
 #endif
 
         GCS_SEND_MESSAGE(MSG_HEARTBEAT);
