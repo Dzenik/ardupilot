@@ -120,7 +120,7 @@ if maybe_prompt_user "Install python using pyenv [N/y]?" ; then
 
         pushd $HOME/.pyenv
         git fetch --tags
-        git checkout v2.3.12
+        git checkout v2.6.7
         popd
         exportline="export PYENV_ROOT=\$HOME/.pyenv"
         echo $exportline >> ~/$SHELL_LOGIN
@@ -134,10 +134,10 @@ if maybe_prompt_user "Install python using pyenv [N/y]?" ; then
     }
     echo "pyenv installed"
     {
-        $(pyenv global 3.10.4)
+        $(pyenv global 3.10.18)
     } || {
-        env PYTHON_CONFIGURE_OPTS="--enable-framework" pyenv install 3.10.4
-        pyenv global 3.10.4
+        env PYTHON_CONFIGURE_OPTS="--enable-framework" pyenv install 3.10.18
+        pyenv global 3.10.18
     }
 fi
 
@@ -172,7 +172,7 @@ if [[ $SKIP_AP_GRAPHIC_ENV -ne 1 ]]; then
 fi
 
 $PIP install --upgrade pip
-$PIP install wheel
+$PIP install --force-reinstall wheel
 $PIP install $PYTHON_PKGS
 
 echo "Adding ArduPilot Tools to environment"
