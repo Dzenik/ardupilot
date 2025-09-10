@@ -324,6 +324,7 @@ const AP_Param::GroupInfo AP_GPS::var_info[] = {
 AP_GPS::AP_GPS() :
     _fence_violated(false),
     _fence_violation_time(0),
+    _fence_last_check_ms(0),
     _fence_state(FENCE_DISABLED),
     _fence_state_change_ms(0),
     _fence_recovery_start_ms(0)
@@ -337,6 +338,11 @@ AP_GPS::AP_GPS() :
         AP_HAL::panic("AP_GPS must be singleton");
     }
     _singleton = this;
+
+    // Ініціалізація GPS_State fence_disabled
+    for (uint8_t i = 0; i < GPS_MAX_INSTANCES; i++) {
+        state[i].fence_disabled = false;
+    }
 }
 
 // return true if a specific type of GPS uses a UART

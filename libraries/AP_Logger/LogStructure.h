@@ -641,6 +641,23 @@ struct PACKED log_VER {
     uint32_t iomcu_cpu_id;
 };
 
+// @LoggerMessage: GPSF
+// @Description: GPS Fence status
+// @Field: TimeUS: Time since system startup
+// @Field: State: Fence state (0=Disabled, 1=Normal, 2=Violated, 3=Recovery)  
+// @Field: Dist: Distance to fence center
+// @Field: Radius: Fence radius
+// @Field: Lat: Latitude
+// @Field: Lng: Longitude
+struct PACKED log_GPS_Fence {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    uint8_t  state;
+    float    distance;
+    float    radius;
+    int32_t  lat;
+    int32_t  lng;
+};
 
 // FMT messages define all message formats other than FMT
 // UNIT messages define units which can be referenced by FMTU messages
@@ -1260,7 +1277,9 @@ LOG_STRUCTURE_FROM_AIS \
     { LOG_VER_MSG, sizeof(log_VER), \
       "VER",   "QBHBBBBIZHBBII", "TimeUS,BT,BST,Maj,Min,Pat,FWT,GH,FWS,APJ,BU,FV,IMI,ICI", "s-------------", "F-------------", false }, \
     { LOG_MOTBATT_MSG, sizeof(log_MotBatt), \
-      "MOTB", "QfffffB",  "TimeUS,LiftMax,BatVolt,ThLimit,ThrAvMx,ThrOut,FailFlags", "s------", "F------" , true }
+      "MOTB", "QfffffB",  "TimeUS,LiftMax,BatVolt,ThLimit,ThrAvMx,ThrOut,FailFlags", "s------", "F------" , true },
+    { LOG_GPS_FENCE_MSG, sizeof(log_GPS_Fence), \
+      "GPSF", "QBffLL", "TimeUS,State,Dist,Radius,Lat,Lng", "s-mm--", "F------" }
 
 // message types 0 to 31 reserved for vehicle-specific use
 
@@ -1348,6 +1367,7 @@ enum LogMessages : uint8_t {
     LOG_RCOUT3_MSG,
     LOG_IDS_FROM_FENCE,
     LOG_IDS_FROM_HAL,
+    LOG_GPS_FENCE_MSG,
 
     _LOG_LAST_MSG_
 };

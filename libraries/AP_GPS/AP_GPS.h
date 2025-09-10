@@ -640,6 +640,12 @@ public:
     void reset_fence_violation() { _fence_violated = false; }
     uint32_t fence_violation_time() const { return _fence_violation_time; }
 
+    uint8_t get_fence_action() const { return _fence_action.get(); }
+    bool get_fence_disabled_status(uint8_t instance) const {
+        return (instance < GPS_MAX_INSTANCES) ? state[instance].fence_disabled : false;
+    }
+    fence_state get_fence_state() const { return _fence_state; }
+
 protected:
 
     // configuration parameters
@@ -847,6 +853,7 @@ private:
 
     void convert_parameters();
 
+
     bool _fence_violated;         // Current fence violation status
     uint32_t _fence_violation_time; // Time of last violation
     uint32_t _fence_last_check_ms; // Last time fence was checked
@@ -857,6 +864,13 @@ private:
     
     static const uint32_t FENCE_RECOVERY_TIME_MS = 3000; // 3 сек на recovery
     static const float FENCE_HYSTERESIS_FACTOR = 0.95f;  // 5% гістерезис
+
+    void handle_fence_violation(float distance, float fence_radius);
+    void handle_fence_recovery();
+    void disable_gps_for_fence();
+    void update_fence_status_flags(uint8_t instance);
+    void log_fence_violation(float distance, float fence_radius);
+    void log_fence_recovery();
 };
 
 namespace AP {

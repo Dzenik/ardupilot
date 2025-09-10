@@ -528,6 +528,14 @@ void AP_AHRS::update(bool skip_ins_update)
         hal.scheduler->delay_microseconds(random() % sitl->loop_time_jitter_us);
     }
 #endif
+
+    uint32_t now_ms = AP_HAL::millis();
+
+    // GPS fence check
+    if ((now_ms - _last_gps_fence_check_ms) >= GPS_FENCE_CHECK_INTERVAL_MS) {
+        check_gps_fence_status();
+        _last_gps_fence_check_ms = now_ms;
+    }
 }
 
 /*
