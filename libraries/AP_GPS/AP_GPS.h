@@ -605,6 +605,19 @@ public:
     // Inject a packet of raw binary to a GPS
     void inject_data(const uint8_t *data, uint16_t len);
 
+    // GPS Fence parameters
+    AP_Int8   _fence_enable;      // Enable/disable GPS fence
+    AP_Float  _fence_lat;         // Fence center latitude
+    AP_Float  _fence_lon;         // Fence center longitude  
+    AP_Float  _fence_radius;      // Fence radius in meters
+    AP_Int8   _fence_action;      // Action on fence violation
+    
+    // GPS Fence methods
+    bool fence_enabled() const { return _fence_enable.get(); }
+    bool check_fence_violation(float lat, float lon) const;
+    bool is_fence_violated() const { return _fence_violated; }
+    void reset_fence_violation() { _fence_violated = false; }
+
 protected:
 
     // configuration parameters
@@ -811,6 +824,9 @@ private:
 #endif
 
     void convert_parameters();
+
+    bool _fence_violated;         // Current fence violation status
+    uint32_t _fence_violation_time; // Time of last violation
 };
 
 namespace AP {

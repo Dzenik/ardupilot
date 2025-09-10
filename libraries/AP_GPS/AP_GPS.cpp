@@ -279,6 +279,44 @@ const AP_Param::GroupInfo AP_GPS::var_info[] = {
     AP_SUBGROUPINFO(params[1], "2_", 33, AP_GPS, AP_GPS::Params),
 #endif
 
+    // @Param: FENCE_ENABLE
+    // @DisplayName: GPS Fence Enable
+    // @Description: Enable GPS coordinate fence
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Standard
+    AP_GROUPINFO("FENCE_ENABLE", 34, AP_GPS, _fence_enable, 0),
+    
+    // @Param: FENCE_LAT  
+    // @DisplayName: GPS Fence Center Latitude
+    // @Description: Latitude of fence center point
+    // @Units: deg
+    // @Range: -90 90
+    // @User: Standard
+    AP_GROUPINFO("FENCE_LAT", 35, AP_GPS, _fence_lat, 0),
+    
+    // @Param: FENCE_LON
+    // @DisplayName: GPS Fence Center Longitude  
+    // @Description: Longitude of fence center point
+    // @Units: deg
+    // @Range: -180 180
+    // @User: Standard
+    AP_GROUPINFO("FENCE_LON", 36, AP_GPS, _fence_lon, 0),
+    
+    // @Param: FENCE_RAD
+    // @DisplayName: GPS Fence Radius
+    // @Description: Maximum allowed distance from fence center
+    // @Units: m
+    // @Range: 10 10000
+    // @User: Standard  
+    AP_GROUPINFO("FENCE_RAD", 37, AP_GPS, _fence_radius, 1000),
+    
+    // @Param: FENCE_ACT
+    // @DisplayName: GPS Fence Action
+    // @Description: Action to take on fence violation
+    // @Values: 0:Report Only,1:Disable GPS,2:RTL
+    // @User: Standard
+    AP_GROUPINFO("FENCE_ACT", 38, AP_GPS, _fence_action, 1),
+
     AP_GROUPEND
 };
 
@@ -289,6 +327,9 @@ AP_GPS::AP_GPS()
                     "GPS initilisation blob is too large to be completely sent before the baud rate changes");
 
     AP_Param::setup_object_defaults(this, var_info);
+
+    _fence_violated(false);
+    _fence_violation_time(0);
 
     if (_singleton != nullptr) {
         AP_HAL::panic("AP_GPS must be singleton");
