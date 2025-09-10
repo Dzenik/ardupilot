@@ -1094,8 +1094,18 @@ void AP_GPS::update(void)
 {
     WITH_SEMAPHORE(rsem);
 
+    uint32_t now = AP_HAL::millis();
+
     for (uint8_t i=0; i<GPS_MAX_RECEIVERS; i++) {
         update_instance(i);
+
+        if (state[i].last_gps_time_ms != state[i].time_week_ms) {
+            state[i].last_gps_time_ms = state[i].time_week_ms;
+            
+            if (fence_enabled() && state[i].status >= GPS_OK_FIX_2D) {
+                update_fence_status(i);
+            }
+        }
     }
 
     // calculate number of instances
@@ -2044,6 +2054,126 @@ bool AP_GPS::gps_yaw_deg(uint8_t instance, float &yaw_deg, float &accuracy_deg, 
     }
     return true;
 }
+
+void AP_GPS::update_fence_status(uint8_t instance)
+{
+    if (!fence_enabled() || instance >= GPS_MAX_INSTANCES) {
+        return;
+    }
+    
+    const GPS_State &gps_state = state[instance];
+    
+    // Перевіряємо тільки якщо є валідний fix
+    if (gps_state.status < GPS_OK_FIX_2D) {
+        return;
+    }
+    
+    // Отримуємо координати
+    float current_lat = gps_state.location.lat * 1.0e-7f;  // Конвертація з int32_t
+    float current_lon = gps_state.location.lng * 1.0e-7f;
+    
+    // Перевірка fence порушення
+    bool violation = check_fence_violation(current_lat, current_lon);
+    
+    uint32_t now_ms = AP_HAL::millis();
+    
+    if (violation && !_fence_violated) {
+        // Нове порушення fence
+        _fence_violated = true;
+        _fence_violation_time = now_ms;
+        
+        // Логування
+        gcs().send_text(MAV_SEVERITY_WARNING, "GPS: Fence violation detected");
+        
+        // Виконання дії згідно параметру
+        handle_fence_violation();
+        
+    } else if (!violation && _fence_violated) {
+        // Повернення в дозволену зону
+        _fence_violated = false;
+        
+        gcs().send_text(MAV_SEVERITY_INFO, "GPS: Back inside fence");
+        
+        // Відновлення GPS використання
+        handle_fence_recovery();
+    }
+}
+
+bool AP_GPS::check_fence_violation(float lat, float lon)
+{
+    if (!fence_enabled()) {
+        return false;
+    }
+    
+    float fence_lat = _fence_lat.get();
+    float fence_lon = _fence_lon.get();
+    float fence_radius = _fence_radius.get();
+    
+    // Перевірка чи задані валідні координати центру
+    if (is_zero(fence_lat) && is_zero(fence_lon)) {
+        return false;
+    }
+    
+    float distance = calculate_fence_distance(lat, lon);
+    
+    return (distance > fence_radius);
+}
+
+float AP_GPS::calculate_fence_distance(float lat, float lon) const
+{
+    float fence_lat = _fence_lat.get();
+    float fence_lon = _fence_lon.get();
+    
+    // Використовуємо функцію get_distance з Location
+    Location current_loc;
+    current_loc.lat = lat * 1.0e7f;
+    current_loc.lng = lon * 1.0e7f;
+    
+    Location fence_center;
+    fence_center.lat = fence_lat * 1.0e7f;
+    fence_center.lng = fence_lon * 1.0e7f;
+    
+    return current_loc.get_distance(fence_center);
+}
+
+void AP_GPS::handle_fence_violation()
+{
+    uint8_t action = _fence_action.get();
+    
+    switch (action) {
+        case 0:  // Report Only
+            // Тільки логування - нічого більше не робимо
+            break;
+            
+        case 1:  // Disable GPS
+            // Встановлюємо статус як недоступний
+            for (uint8_t i = 0; i < GPS_MAX_INSTANCES; i++) {
+                if (state[i].status >= GPS_OK_FIX_2D) {
+                    // Тимчасово помічаємо GPS як недоступний
+                    state[i].fence_disabled = true;
+                }
+            }
+            break;
+            
+        case 2:  // RTL Mode
+            // Повідомляємо систему про необхідність RTL
+            // Це буде оброблено на рівні vehicle
+            break;
+    }
+}
+
+void AP_GPS::handle_fence_recovery()
+{
+    // Відновлюємо GPS якщо він був відключений через fence
+    for (uint8_t i = 0; i < GPS_MAX_INSTANCES; i++) {
+        if (state[i].fence_disabled) {
+            state[i].fence_disabled = false;
+            gcs().send_text(MAV_SEVERITY_INFO, "GPS: Restored after fence recovery");
+        }
+    }
+}
+
+
 
 /*
  * Old parameter metadata.  Until we have versioned parameters, keeping

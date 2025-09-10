@@ -242,6 +242,8 @@ public:
         float relPosD;                     ///< Reported Vertical distance in meters
         float accHeading;                  ///< Reported Heading Accuracy in degrees
         uint32_t relposheading_ts;        ///< True if new data has been received since last time it was false
+
+        bool fence_disabled;           ///< true if geofence is disabled
     };
 
     /// Startup initialisation.
@@ -612,11 +614,16 @@ public:
     AP_Float  _fence_radius;      // Fence radius in meters
     AP_Int8   _fence_action;      // Action on fence violation
     
-    // GPS Fence methods
-    bool fence_enabled() const { return _fence_enable.get(); }
+    // GPS Fence specific methods
     bool check_fence_violation(float lat, float lon) const;
+    void update_fence_status(uint8_t instance);
+    float calculate_fence_distance(float lat, float lon) const;
+
+    // Fence status getters
+    bool fence_enabled() const { return _fence_enable.get(); }
     bool is_fence_violated() const { return _fence_violated; }
     void reset_fence_violation() { _fence_violated = false; }
+    uint32_t fence_violation_time() const { return _fence_violation_time; }
 
 protected:
 
@@ -827,6 +834,7 @@ private:
 
     bool _fence_violated;         // Current fence violation status
     uint32_t _fence_violation_time; // Time of last violation
+    uint32_t _fence_last_check_ms; // Last time fence was checked
 };
 
 namespace AP {
