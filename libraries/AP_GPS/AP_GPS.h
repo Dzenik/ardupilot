@@ -607,6 +607,21 @@ public:
     // Inject a packet of raw binary to a GPS
     void inject_data(const uint8_t *data, uint16_t len);
 
+    // Fence status enum
+    enum fence_state {
+        FENCE_DISABLED = 0,
+        FENCE_NORMAL = 1,
+        FENCE_VIOLATED = 2,
+        FENCE_RECOVERY = 3
+    };
+    
+    // Fence action enum  
+    enum fence_action {
+        FENCE_ACTION_REPORT_ONLY = 0,
+        FENCE_ACTION_DISABLE_GPS = 1,
+        FENCE_ACTION_RTL = 2
+    };
+
     // GPS Fence parameters
     AP_Int8   _fence_enable;      // Enable/disable GPS fence
     AP_Float  _fence_lat;         // Fence center latitude
@@ -835,6 +850,13 @@ private:
     bool _fence_violated;         // Current fence violation status
     uint32_t _fence_violation_time; // Time of last violation
     uint32_t _fence_last_check_ms; // Last time fence was checked
+
+    fence_state _fence_state;
+    uint32_t _fence_state_change_ms;  // Час зміни стану
+    uint32_t _fence_recovery_start_ms; // Початок recovery period
+    
+    static const uint32_t FENCE_RECOVERY_TIME_MS = 3000; // 3 сек на recovery
+    static const float FENCE_HYSTERESIS_FACTOR = 0.95f;  // 5% гістерезис
 };
 
 namespace AP {

@@ -321,15 +321,17 @@ const AP_Param::GroupInfo AP_GPS::var_info[] = {
 };
 
 // constructor
-AP_GPS::AP_GPS()
+AP_GPS::AP_GPS() :
+    _fence_violated(false),
+    _fence_violation_time(0),
+    _fence_state(FENCE_DISABLED),
+    _fence_state_change_ms(0),
+    _fence_recovery_start_ms(0)
 {
     static_assert((sizeof(_initialisation_blob) * (CHAR_BIT + 2)) < (4800 * GPS_BAUD_TIME_MS * 1e-3),
                     "GPS initilisation blob is too large to be completely sent before the baud rate changes");
 
     AP_Param::setup_object_defaults(this, var_info);
-
-    _fence_violated(false);
-    _fence_violation_time(0);
 
     if (_singleton != nullptr) {
         AP_HAL::panic("AP_GPS must be singleton");
@@ -2057,66 +2059,120 @@ bool AP_GPS::gps_yaw_deg(uint8_t instance, float &yaw_deg, float &accuracy_deg, 
 
 void AP_GPS::update_fence_status(uint8_t instance)
 {
-    if (!fence_enabled() || instance >= GPS_MAX_INSTANCES) {
+    if (!fence_enabled()) {
+        if (_fence_state != FENCE_DISABLED) {
+            _fence_state = FENCE_DISABLED;
+            _fence_state_change_ms = AP_HAL::millis();
+        }
         return;
     }
     
-    const GPS_State &gps_state = state[instance];
-    
-    // Перевіряємо тільки якщо є валідний fix
-    if (gps_state.status < GPS_OK_FIX_2D) {
+    if (instance >= GPS_MAX_INSTANCES || state[instance].status < GPS_OK_FIX_2D) {
         return;
     }
-    
-    // Отримуємо координати
-    float current_lat = gps_state.location.lat * 1.0e-7f;  // Конвертація з int32_t
-    float current_lon = gps_state.location.lng * 1.0e-7f;
-    
-    // Перевірка fence порушення
-    bool violation = check_fence_violation(current_lat, current_lon);
-    
+
     uint32_t now_ms = AP_HAL::millis();
     
-    if (violation && !_fence_violated) {
-        // Нове порушення fence
-        _fence_violated = true;
-        _fence_violation_time = now_ms;
+    // Отримуємо поточні координати
+    float current_lat = state[instance].location.lat * 1.0e-7f;
+    float current_lon = state[instance].location.lng * 1.0e-7f;
+    
+    // Розрахунок відстані до fence
+    float distance = calculate_fence_distance(current_lat, current_lon);
+    float fence_radius = _fence_radius.get();
+    
+    // State machine логіка
+    switch (_fence_state) {
         
-        // Логування
-        gcs().send_text(MAV_SEVERITY_WARNING, "GPS: Fence violation detected");
-        
-        // Виконання дії згідно параметру
-        handle_fence_violation();
-        
-    } else if (!violation && _fence_violated) {
-        // Повернення в дозволену зону
-        _fence_violated = false;
-        
-        gcs().send_text(MAV_SEVERITY_INFO, "GPS: Back inside fence");
-        
-        // Відновлення GPS використання
-        handle_fence_recovery();
+        case FENCE_DISABLED:
+            _fence_state = FENCE_NORMAL;
+            _fence_state_change_ms = now_ms;
+            break;
+            
+        case FENCE_NORMAL:
+            if (distance > fence_radius) {
+                // Порушення детектовано
+                _fence_state = FENCE_VIOLATED;
+                _fence_state_change_ms = now_ms;
+                _fence_violated = true;
+                _fence_violation_time = now_ms;
+                
+                handle_fence_violation(distance, fence_radius);
+            }
+            break;
+            
+        case FENCE_VIOLATED:
+            // Перевірка з гістерезисом для запобігання тремтінню
+            if (distance <= fence_radius * FENCE_HYSTERESIS_FACTOR) {
+                // Початок recovery періоду
+                _fence_state = FENCE_RECOVERY;
+                _fence_state_change_ms = now_ms;
+                _fence_recovery_start_ms = now_ms;
+                
+                gcs().send_text(MAV_SEVERITY_INFO, "GPS: Fence recovery started");
+            }
+            break;
+            
+        case FENCE_RECOVERY:
+            // Перевірка чи залишаємося в безпечній зоні
+            if (distance > fence_radius) {
+                // Знову вийшли за межі - повертаємося до VIOLATED
+                _fence_state = FENCE_VIOLATED;
+                _fence_state_change_ms = now_ms;
+                
+                gcs().send_text(MAV_SEVERITY_WARNING, "GPS: Fence recovery failed");
+                
+            } else if ((now_ms - _fence_recovery_start_ms) >= FENCE_RECOVERY_TIME_MS) {
+                // Recovery період завершено успішно
+                _fence_state = FENCE_NORMAL;
+                _fence_state_change_ms = now_ms;
+                _fence_violated = false;
+                
+                handle_fence_recovery();
+            }
+            break;
     }
+    
+    // Оновлення статусу для зовнішнього доступу
+    update_fence_status_flags(instance);
 }
 
 bool AP_GPS::check_fence_violation(float lat, float lon)
 {
-    if (!fence_enabled()) {
+    if (!fence_enabled() || _fence_state == FENCE_DISABLED) {
         return false;
     }
     
+    // Перевірка валідності центру fence
     float fence_lat = _fence_lat.get();
     float fence_lon = _fence_lon.get();
-    float fence_radius = _fence_radius.get();
     
-    // Перевірка чи задані валідні координати центру
     if (is_zero(fence_lat) && is_zero(fence_lon)) {
+        // Центр не встановлено
+        return false;
+    }
+    
+    // Перевірка валідності поточних координат
+    if (is_zero(lat) && is_zero(lon)) {
         return false;
     }
     
     float distance = calculate_fence_distance(lat, lon);
+    float fence_radius = _fence_radius.get();
     
-    return (distance > fence_radius);
+    // Застосовуємо гістерезис залежно від поточного стану
+    switch (_fence_state) {
+        case FENCE_NORMAL:
+            return (distance > fence_radius);
+            
+        case FENCE_VIOLATED:
+        case FENCE_RECOVERY:
+            // Використовуємо гістерезис для recovery
+            return (distance > fence_radius * FENCE_HYSTERESIS_FACTOR);
+            
+        default:
+            return false;
+    }
 }
 
 float AP_GPS::calculate_fence_distance(float lat, float lon) const
@@ -2140,39 +2196,130 @@ void AP_GPS::handle_fence_violation()
 {
     uint8_t action = _fence_action.get();
     
+    // Детальне логування
+    gcs().send_text(MAV_SEVERITY_WARNING, 
+                   "GPS: Fence violation! Distance: %.1fm, Limit: %.1fm", 
+                   (double)distance, (double)fence_radius);
+    
     switch (action) {
-        case 0:  // Report Only
-            // Тільки логування - нічого більше не робимо
+        case FENCE_ACTION_REPORT_ONLY:
+            // Тільки логування
+            gcs().send_text(MAV_SEVERITY_INFO, "GPS: Fence action - Report only");
             break;
             
-        case 1:  // Disable GPS
-            // Встановлюємо статус як недоступний
-            for (uint8_t i = 0; i < GPS_MAX_INSTANCES; i++) {
-                if (state[i].status >= GPS_OK_FIX_2D) {
-                    // Тимчасово помічаємо GPS як недоступний
-                    state[i].fence_disabled = true;
-                }
-            }
+        case FENCE_ACTION_DISABLE_GPS:
+            // Відключаємо GPS дані
+            disable_gps_for_fence();
+            gcs().send_text(MAV_SEVERITY_WARNING, "GPS: Fence action - GPS disabled");
             break;
             
-        case 2:  // RTL Mode
-            // Повідомляємо систему про необхідність RTL
-            // Це буде оброблено на рівні vehicle
+        case FENCE_ACTION_RTL:
+            // Сигнал для RTL режиму
+            request_rtl_mode();
+            gcs().send_text(MAV_SEVERITY_CRITICAL, "GPS: Fence action - RTL requested");
             break;
+    }
+    
+    // Запис в dataflash лог
+    log_fence_violation(distance, fence_radius);
+}
+
+void AP_GPS::disable_gps_for_fence()
+{
+    for (uint8_t i = 0; i < GPS_MAX_INSTANCES; i++) {
+        if (state[i].status >= GPS_OK_FIX_2D) {
+            state[i].fence_disabled = true;
+        }
     }
 }
 
 void AP_GPS::handle_fence_recovery()
 {
-    // Відновлюємо GPS якщо він був відключений через fence
+    gcs().send_text(MAV_SEVERITY_INFO, "GPS: Fence recovery completed");
+    
+    // Відновлюємо GPS якщо був відключений
+    bool gps_restored = false;
     for (uint8_t i = 0; i < GPS_MAX_INSTANCES; i++) {
         if (state[i].fence_disabled) {
             state[i].fence_disabled = false;
-            gcs().send_text(MAV_SEVERITY_INFO, "GPS: Restored after fence recovery");
+            gps_restored = true;
         }
+    }
+    
+    if (gps_restored) {
+        gcs().send_text(MAV_SEVERITY_INFO, "GPS: GPS data restored");
+    }
+    
+    // Лог успішного recovery
+    log_fence_recovery();
+}
+
+void AP_GPS::request_rtl_mode()
+{
+    // Встановлюємо внутрішній флаг для vehicle коду
+    _fence_rtl_requested = true;
+}
+
+void AP_GPS::update_fence_status_flags(uint8_t instance)
+{
+    // Оновлюємо GPS статус для AHRS/EKF
+    if (_fence_state == FENCE_VIOLATED && _fence_action.get() == FENCE_ACTION_DISABLE_GPS) {
+        // Маскуємо GPS як недоступний для навігаційних алгоритмів
+        state[instance].fence_disabled = true;
+    } else if (_fence_state == FENCE_NORMAL) {
+        state[instance].fence_disabled = false;
     }
 }
 
+void AP_GPS::log_fence_violation(float distance, float fence_radius)
+{
+    struct log_GPS_Fence {
+        LOG_PACKET_HEADER;
+        uint64_t time_us;
+        uint8_t  state;
+        float    distance;
+        float    radius;
+        int32_t  lat;
+        int32_t  lng;
+    } pkt = {
+        LOG_PACKET_HEADER_INIT(LOG_GPS_FENCE_MSG),
+        time_us  : AP_HAL::micros64(),
+        state    : (uint8_t)_fence_state,
+        distance : distance,
+        radius   : fence_radius,
+        lat      : state[0].location.lat,
+        lng      : state[0].location.lng
+    };
+    
+    AP::logger().WriteBlock(&pkt, sizeof(pkt));
+}
+
+void AP_GPS::log_fence_recovery()
+{
+    // Аналогічний лог для recovery події
+    gcs().send_text(MAV_SEVERITY_INFO, "GPS: Fence recovery logged");
+}
+
+// Публічні методи для перевірки стану
+bool AP_GPS::is_fence_violated() const 
+{ 
+    return (_fence_state == FENCE_VIOLATED || _fence_state == FENCE_RECOVERY);
+}
+
+fence_state AP_GPS::get_fence_state() const 
+{ 
+    return _fence_state; 
+}
+
+bool AP_GPS::is_rtl_requested() const 
+{ 
+    return _fence_rtl_requested; 
+}
+
+void AP_GPS::clear_rtl_request() 
+{ 
+    _fence_rtl_requested = false; 
+}
 
 
 /*
