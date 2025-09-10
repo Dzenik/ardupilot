@@ -718,6 +718,11 @@ public:
     // get access to an EKFGSF_yaw estimator
     const EKFGSF_yaw *get_yaw_estimator(void) const;
 
+    // GPS Fence related methods
+    bool gps_fence_enabled() const;
+    bool is_gps_blocked_by_fence() const { return _gps_blocked_by_fence; }
+    void check_gps_fence_status();
+
 private:
 
     // roll/pitch/yaw euler angles, all in radians
@@ -1060,6 +1065,21 @@ private:
 
     // true when we have completed the common origin setup
     bool done_common_origin;
+
+    // GPS fence status tracking
+    bool _gps_blocked_by_fence;
+    bool _gps_fence_was_violated;
+    uint32_t _gps_fence_recovery_start_ms;
+    uint32_t _last_gps_fence_check_ms;
+    
+    // Recovery timing
+    static const uint32_t GPS_FENCE_RECOVERY_TIME_MS = 2000;  // 2 сек додаткової затримки
+    static const uint32_t GPS_FENCE_CHECK_INTERVAL_MS = 100;  // Перевірка кожні 100мс
+    
+    // Internal methods
+    void handle_gps_fence_violation();
+    void handle_gps_fence_recovery();
+    bool should_use_gps_for_navigation();
 };
 
 namespace AP {

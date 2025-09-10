@@ -207,7 +207,11 @@ extern const AP_HAL::HAL& hal;
 
 // constructor
 AP_AHRS::AP_AHRS(uint8_t flags) :
-    _ekf_flags(flags)
+    _ekf_flags(flags),
+    _gps_blocked_by_fence(false),
+    _gps_fence_was_violated(false),
+    _gps_fence_recovery_start_ms(0),
+    _last_gps_fence_check_ms(0)
 {
     _singleton = this;
 
@@ -3727,6 +3731,195 @@ float AP_AHRS::get_air_density_ratio(void) const
 {
     const float eas2tas = get_EAS2TAS();
     return 1.0 / sq(eas2tas);
+}
+
+// Перевірка статусу GPS fence
+void AP_AHRS::check_gps_fence_status()
+{
+    const AP_GPS &gps = AP::gps();
+    
+    if (!gps.fence_enabled()) {
+        // Fence вимкнений - відновлюємо GPS якщо був заблокований
+        if (_gps_blocked_by_fence) {
+            _gps_blocked_by_fence = false;
+            _gps_fence_was_violated = false;
+            gcs().send_text(MAV_SEVERITY_INFO, "AHRS: GPS fence disabled, GPS restored");
+        }
+        return;
+    }
+    
+    bool fence_violated = gps.is_fence_violated();
+    uint32_t now_ms = AP_HAL::millis();
+    
+    // Відстеження змін стану fence
+    if (fence_violated && !_gps_fence_was_violated) {
+        // Нове порушення
+        handle_gps_fence_violation();
+        
+    } else if (!fence_violated && _gps_fence_was_violated) {
+        // Fence відновився
+        handle_gps_fence_recovery();
+    }
+    
+    _gps_fence_was_violated = fence_violated;
+}
+
+// Обробка порушення fence
+void AP_AHRS::handle_gps_fence_violation()
+{
+    const AP_GPS &gps = AP::gps();
+    uint8_t fence_action = gps.get_fence_action();
+    
+    if (fence_action == AP_GPS::FENCE_ACTION_DISABLE_GPS) {
+        _gps_blocked_by_fence = true;
+        
+        gcs().send_text(MAV_SEVERITY_WARNING, 
+                       "AHRS: GPS fence violation - switching to IMU navigation");
+        
+        // Повідомляємо EKF про втрату GPS
+        notify_gps_loss_to_ekf();
+    }
+    
+    // Логування для налагодження
+    AP::logger().Write("GPS_FENCE", "Status,Action", "BB", 
+                      _gps_blocked_by_fence, fence_action);
+}
+
+// Обробка відновлення fence
+void AP_AHRS::handle_gps_fence_recovery()
+{
+    uint32_t now_ms = AP_HAL::millis();
+    
+    if (_gps_blocked_by_fence) {
+        // Починаємо додатковий період recovery в AHRS
+        if (_gps_fence_recovery_start_ms == 0) {
+            _gps_fence_recovery_start_ms = now_ms;
+            gcs().send_text(MAV_SEVERITY_INFO, "AHRS: GPS fence recovery period started");
+            return;
+        }
+        
+        // Перевіряємо чи минув recovery період
+        if ((now_ms - _gps_fence_recovery_start_ms) >= GPS_FENCE_RECOVERY_TIME_MS) {
+            // Відновлюємо GPS
+            _gps_blocked_by_fence = false;
+            _gps_fence_recovery_start_ms = 0;
+            
+            gcs().send_text(MAV_SEVERITY_INFO, "AHRS: GPS fence recovery completed - GPS restored");
+            
+            // Повідомляємо EKF про відновлення GPS
+            notify_gps_recovery_to_ekf();
+            
+            // Логування
+            AP::logger().Write("GPS_FENCE", "Status,Recovery", "BB", 
+                              _gps_blocked_by_fence, 1);
+        }
+    }
+}
+
+// Визначення чи використовувати GPS для навігації
+bool AP_AHRS::should_use_gps_for_navigation()
+{
+    const AP_GPS &gps = AP::gps();
+    
+    // Базові перевірки GPS
+    if (gps.status() < AP_GPS::GPS_OK_FIX_2D || gps.num_sats() < 4) {
+        return false;
+    }
+    
+    // Перевірка fence блокування
+    if (_gps_blocked_by_fence) {
+        return false;
+    }
+    
+    // Перевірка чи GPS не відключений самим GPS модулем через fence
+    if (gps.is_fence_violated() && gps.get_fence_action() == AP_GPS::FENCE_ACTION_DISABLE_GPS) {
+        // Подвійна перевірка на рівні AHRS
+        for (uint8_t i = 0; i < gps.num_instances(); i++) {
+            if (gps.get_fence_disabled_status(i)) {
+                return false;
+            }
+        }
+    }
+    
+    return true;  // GPS доступний для навігації
+}
+
+// Повідомлення EKF про втрату GPS
+void AP_AHRS::notify_gps_loss_to_ekf()
+{
+    if (_ekf3_started) {
+        _ekf3.setGpsLoss(true);
+    }
+    if (_ekf2_started) {
+        _ekf2.setGpsLoss(true);
+    }
+}
+
+// Повідомлення EKF про відновлення GPS
+void AP_AHRS::notify_gps_recovery_to_ekf()
+{
+    if (_ekf3_started) {
+        _ekf3.setGpsLoss(false);
+        // Можливо потрібна ре-ініціалізація
+        _ekf3.resetGpsAlignment();
+    }
+    if (_ekf2_started) {
+        _ekf2.setGpsLoss(false);
+        _ekf2.resetGpsAlignment();
+    }
+}
+
+// Публічні методи для зовнішнього доступу
+bool AP_AHRS::gps_fence_enabled() const
+{
+    return AP::gps().fence_enabled();
+}
+
+// Метод для vehicle коду для перевірки статусу
+bool AP_AHRS::healthy() const
+{
+    // Існуюча логіка healthy()...
+    
+    bool base_healthy = _ekf3_started ? _ekf3.healthy() : 
+                       _ekf2_started ? _ekf2.healthy() : false;
+    
+    // Якщо GPS заблокований fence, все ще можемо бути healthy на IMU
+    if (_gps_blocked_by_fence) {
+        // Повертаємо стан базуючись на IMU
+        return base_healthy && have_inertial_nav();
+    }
+    
+    return base_healthy;
+}
+
+// Додати в get_position() для врахування fence
+bool AP_AHRS::get_position(struct Location &loc) const
+{
+    // Якщо GPS заблокований fence, використовуємо тільки інерційну навігацію
+    if (_gps_blocked_by_fence) {
+        return get_position_from_inertial_nav(loc);
+    }
+    
+    // Інакше використовуємо стандартну логіку
+    return _ekf3_started ? _ekf3.getLocation(loc) :
+           _ekf2_started ? _ekf2.getLocation(loc) : false;
+}
+
+// Додати метод для отримання статусу fence в MAVLink
+void AP_AHRS::send_fence_status() const
+{
+    const AP_GPS &gps = AP::gps();
+    
+    if (gps.fence_enabled()) {
+        mavlink_msg_fence_status_send(
+            MAVLINK_COMM_0,
+            gps.is_fence_violated() ? 1 : 0,
+            gps.get_fence_state(),
+            _gps_blocked_by_fence ? 1 : 0,
+            gps.calculate_fence_distance(gps.location().lat * 1e-7f, 
+                                        gps.location().lng * 1e-7f)
+        );
+    }
 }
 
 // singleton instance
